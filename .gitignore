@@ -1,0 +1,25 @@
+# Binaries
+bin/
+dist/
+
+# Environment
+.env
+.env.*
+
+# Coverage
+coverage.out
+coverage.html
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Lambda packaging
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
