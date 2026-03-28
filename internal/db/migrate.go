@@ -15,7 +15,7 @@ func Migrate(ctx context.Context, connStr string, dir string) error {
 	if err != nil {
 		return fmt.Errorf("migrate: failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := goose.SetDialect("postgres"); err != nil {
 		return fmt.Errorf("migrate: failed to set dialect: %w", err)
