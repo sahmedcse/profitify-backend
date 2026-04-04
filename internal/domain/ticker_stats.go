@@ -18,26 +18,32 @@ type TickerStats struct {
 	RelativeVolume  float64 `json:"relative_volume"`
 
 	// 7-day rolling
-	Return7d      *float64 `json:"return_7d"`
-	Volatility7d  *float64 `json:"volatility_7d"`
-	AvgVolume7d   *float64 `json:"avg_volume_7d"`
-	MaxDrawdown7d *float64 `json:"max_drawdown_7d"`
+	PriceReturn7d    *float64 `json:"price_return_7d"`
+	DividendReturn7d *float64 `json:"dividend_return_7d"`
+	TotalReturn7d    *float64 `json:"total_return_7d"`
+	Volatility7d     *float64 `json:"volatility_7d"`
+	AvgVolume7d      *float64 `json:"avg_volume_7d"`
+	MaxDrawdown7d    *float64 `json:"max_drawdown_7d"`
 
 	// 30-day rolling
-	Return30d      *float64 `json:"return_30d"`
-	Volatility30d  *float64 `json:"volatility_30d"`
-	AvgVolume30d   *float64 `json:"avg_volume_30d"`
-	MaxDrawdown30d *float64 `json:"max_drawdown_30d"`
+	PriceReturn30d    *float64 `json:"price_return_30d"`
+	DividendReturn30d *float64 `json:"dividend_return_30d"`
+	TotalReturn30d    *float64 `json:"total_return_30d"`
+	Volatility30d     *float64 `json:"volatility_30d"`
+	AvgVolume30d      *float64 `json:"avg_volume_30d"`
+	MaxDrawdown30d    *float64 `json:"max_drawdown_30d"`
 
 	// 90-day rolling
-	Return90d      *float64 `json:"return_90d"`
-	Volatility90d  *float64 `json:"volatility_90d"`
-	AvgVolume90d   *float64 `json:"avg_volume_90d"`
-	MaxDrawdown90d *float64 `json:"max_drawdown_90d"`
+	PriceReturn90d    *float64 `json:"price_return_90d"`
+	DividendReturn90d *float64 `json:"dividend_return_90d"`
+	TotalReturn90d    *float64 `json:"total_return_90d"`
+	Volatility90d     *float64 `json:"volatility_90d"`
+	AvgVolume90d      *float64 `json:"avg_volume_90d"`
+	MaxDrawdown90d    *float64 `json:"max_drawdown_90d"`
 
 	// 52-week extremes
-	High52w        *float64 `json:"high_52w"`
-	Low52w         *float64 `json:"low_52w"`
+	High52w            *float64 `json:"high_52w"`
+	Low52w             *float64 `json:"low_52w"`
 	DistFromHigh52wPct *float64 `json:"dist_from_high_52w_pct"`
 	DistFromLow52wPct  *float64 `json:"dist_from_low_52w_pct"`
 }
