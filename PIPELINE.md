@@ -196,8 +196,9 @@ internal/
     indicators.go             #   FetchSMA, FetchEMA, FetchRSI, FetchMACD
 
   repository/                 # Database access layer (pgx raw SQL, ON CONFLICT DO UPDATE)
+    repository.go             #   Interfaces: TickerRepository, DailyPriceRepository, etc.
     ticker.go                 #   UpsertBatch, GetActive, GetBySymbol
-    daily_price.go            #   Upsert, GetHistorical
+    daily_price.go            #   Upsert, GetHistorical, GetLatest
     ticker_fundamentals.go    #   Upsert
     ticker_technicals.go      #   Upsert
     ticker_stats.go           #   Upsert
@@ -313,3 +314,57 @@ make build-lambdas    # Builds all Lambda binaries (linux/arm64 for Graviton2)
 ```
 
 Each Lambda produces a `bootstrap` binary in `bin/lambda-<name>/bootstrap`.
+
+## Implementation Plan
+
+Implementation is sliced vertically by Lambda function. Each branch delivers a complete, testable Lambda from repository through to `cmd/` entrypoint.
+
+### Branch 1: `feature/lambda-fetch-tickers`
+
+**Lambdas:** FetchTickers + StartPipeline (fan-out layer)
+
+| Package | Files | Description |
+|---------|-------|-------------|
+| `polygon` | `client.go`, `tickers.go` | Base HTTP client (auth, rate limiter, retry), paginated ticker fetch |
+| `repository` | `repository.go`, `ticker.go` | Interface definitions + ticker CRUD (UpsertBatch, GetActive, GetBySymbol) |
+| `pipeline` | `event.go`, `errors.go`, `sqs.go` | TickerEvent type, custom error types, SQS batch send |
+| `cmd/` | `lambda-fetch-tickers/`, `lambda-start-pipeline/` | Lambda entrypoints |
+
+**New dependencies:** `aws-sdk-go-v2` (sqs, sfn, config), `golang.org/x/time`
+
+### Branch 2: `feature/lambda-ingest-ohlcv`
+
+**Lambda:** IngestOHLCV (Stage A)
+
+| Package | Files | Description |
+|---------|-------|-------------|
+| `polygon` | `aggregates.go` | Fetch daily OHLCV from `/v1/open-close/{ticker}/{date}` |
+| `repository` | `daily_price.go` | Upsert, GetHistorical, GetLatest |
+| `cmd/` | `lambda-ingest-ohlcv/` | Lambda entrypoint |
+
+### Branch 3: `feature/lambda-enrich-ticker`
+
+**Lambda:** EnrichTicker (Stage B)
+
+| Package | Files | Description |
+|---------|-------|-------------|
+| `polygon` | `fundamentals.go`, `dividends.go`, `news.go`, `related.go`, `indicators.go` | 5 Polygon API endpoint clients |
+| `repository` | 6 files | Upsert for fundamentals, dividends, news, news_insights, related, technicals |
+| `indicator` | `bollinger.go`, `atr.go`, `obv.go` | Pure math functions for self-computed indicators |
+| `cmd/` | `lambda-enrich-ticker/` | Lambda entrypoint: 11 Polygon calls → self-compute → upsert |
+
+### Branch 4: `feature/lambda-compute-stats`
+
+**Lambda:** ComputeStats (Stage C)
+
+| Package | Files | Description |
+|---------|-------|-------------|
+| `stats` | `daily.go`, `rolling.go`, `dividend.go`, `relations.go` | Pure computation: daily metrics, rolling returns, dividend analytics, cross-ticker relations |
+| `repository` | 8 files | Upsert for stats, news_summaries, dividend_summaries, dividend_analytics, correlations, lead_lag, volume_profiles, volatility_clusters |
+| `cmd/` | `lambda-compute-stats/` | Lambda entrypoint: read → compute → upsert |
+
+### Design Patterns
+
+- **Repository interfaces**: Defined in `internal/repository/repository.go`. Each repo has a concrete struct taking `*pgxpool.Pool` via constructor. Interfaces enable unit testing Lambda handlers with mocks.
+- **Polygon client**: Methods on `*Client` receiver, return domain types directly. API response structs are unexported (private to polygon package). Retry on 429 (with Retry-After) and 5xx (exponential backoff).
+- **Testing**: Unit tests use `httptest.NewServer` for Polygon and mock interfaces for repos. Integration tests run against Docker DB. Table-driven tests everywhere.
