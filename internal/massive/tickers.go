@@ -1,4 +1,4 @@
-package polygon
+package massive
 
 import (
 	"context"
@@ -10,13 +10,13 @@ import (
 	"github.com/profitify/profitify-backend/internal/domain"
 )
 
-// FetchActiveTickers fetches all active US equity tickers from Polygon.
+// FetchActiveTickers fetches all active US equity tickers from Massive.
 // Uses the "collect then retry" pattern: iterates all pages, and if a
 // retryable error occurs mid-pagination, retries the entire operation.
 func (c *Client) FetchActiveTickers(ctx context.Context) ([]domain.Ticker, error) {
 	var tickers []domain.Ticker
 
-	c.logger.Info("fetching active tickers from Polygon")
+	c.logger.Info("fetching active tickers from Massive")
 
 	err := c.retry("FetchActiveTickers", func() error {
 		tickers = nil // reset on retry
@@ -39,7 +39,7 @@ func (c *Client) FetchActiveTickers(ctx context.Context) ([]domain.Ticker, error
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("polygon.FetchActiveTickers: %w", err)
+		return nil, fmt.Errorf("massive.FetchActiveTickers: %w", err)
 	}
 
 	c.logger.Info("fetched active tickers", "count", len(tickers))

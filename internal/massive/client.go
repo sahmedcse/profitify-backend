@@ -1,4 +1,4 @@
-package polygon
+package massive
 
 import (
 	"errors"
@@ -21,7 +21,7 @@ const (
 // sleepFunc is a function that pauses execution for the given duration.
 type sleepFunc func(time.Duration)
 
-// Client wraps the Massive/Polygon SDK client with retry logic for 429 and 5xx errors.
+// Client wraps the Massive SDK client with retry logic for 429 and 5xx errors.
 type Client struct {
 	sdk        *massive.Client
 	logger     *slog.Logger
@@ -31,7 +31,7 @@ type Client struct {
 	sleep      sleepFunc
 }
 
-// NewClient creates a new Polygon client wrapper with default retry settings.
+// NewClient creates a new Massive client wrapper with default retry settings.
 func NewClient(apiKey string, logger *slog.Logger) *Client {
 	return &Client{
 		sdk:        massive.New(apiKey),

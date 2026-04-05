@@ -1,6 +1,6 @@
 # Profitify Backend
 
-Go backend for the Profitify financial analytics platform. Runs a daily market data pipeline that ingests OHLCV data for US equity tickers from [Polygon.io](https://polygon.io), enriches with fundamentals, dividends, news, and technical indicators, then computes analytics and statistics.
+Go backend for the Profitify financial analytics platform. Runs a daily market data pipeline that ingests OHLCV data for US equity tickers from [Massive](https://massive.com), enriches with fundamentals, dividends, news, and technical indicators, then computes analytics and statistics.
 
 ## Getting Started
 
