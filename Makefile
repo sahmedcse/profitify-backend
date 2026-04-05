@@ -1,4 +1,8 @@
-.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover migrate-up migrate-down migrate-status migrate-create clean help
+.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql
+
+# Docker parameters
+DOCKER_COMPOSE=docker compose
+DOCKER_DB_URL=postgres://profitify:profitify@localhost:5432/profitify?sslmode=disable
 
 # Go parameters
 GOCMD=go
@@ -74,3 +78,32 @@ clean:
 ## tidy: Run go mod tidy
 tidy:
 	$(GOCMD) mod tidy
+
+## docker-up: Start local DB and run migrations
+docker-up:
+	$(DOCKER_COMPOSE) up -d db
+	$(DOCKER_COMPOSE) run --rm migrate
+
+## docker-down: Stop local DB (preserves data)
+docker-down:
+	$(DOCKER_COMPOSE) down
+
+## docker-reset: Stop local DB and delete all data
+docker-reset:
+	$(DOCKER_COMPOSE) down -v
+
+## docker-migrate: Run migrations against local Docker DB
+docker-migrate:
+	DATABASE_URL=$(DOCKER_DB_URL) ./scripts/migrate.sh up
+
+## docker-migrate-down: Roll back last migration on local Docker DB
+docker-migrate-down:
+	DATABASE_URL=$(DOCKER_DB_URL) ./scripts/migrate.sh down
+
+## docker-migrate-status: Show migration status on local Docker DB
+docker-migrate-status:
+	DATABASE_URL=$(DOCKER_DB_URL) ./scripts/migrate.sh status
+
+## docker-psql: Open psql shell to local Docker DB
+docker-psql:
+	docker exec -it profitify-db psql -U profitify -d profitify
