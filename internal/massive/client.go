@@ -1,8 +1,9 @@
-package polygon
+package massive
 
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"time"
 
@@ -20,19 +21,21 @@ const (
 // sleepFunc is a function that pauses execution for the given duration.
 type sleepFunc func(time.Duration)
 
-// Client wraps the Massive/Polygon SDK client with retry logic for 429 and 5xx errors.
+// Client wraps the Massive SDK client with retry logic for 429 and 5xx errors.
 type Client struct {
 	sdk        *massive.Client
+	logger     *slog.Logger
 	maxRetries int
 	baseDelay  time.Duration
 	maxDelay   time.Duration
 	sleep      sleepFunc
 }
 
-// NewClient creates a new Polygon client wrapper with default retry settings.
-func NewClient(apiKey string) *Client {
+// NewClient creates a new Massive client wrapper with default retry settings.
+func NewClient(apiKey string, logger *slog.Logger) *Client {
 	return &Client{
 		sdk:        massive.New(apiKey),
+		logger:     logger,
 		maxRetries: defaultMaxRetries,
 		baseDelay:  defaultBaseDelay,
 		maxDelay:   defaultMaxDelay,
@@ -75,11 +78,24 @@ func (c *Client) retry(operation string, fn func() error) error {
 		}
 
 		if attempt == c.maxRetries {
+			c.logger.Error("max retries exceeded",
+				"operation", operation,
+				"retries", c.maxRetries,
+				"status", statusCode,
+			)
 			return fmt.Errorf("%s: max retries (%d) exceeded for status %d: %w",
 				operation, c.maxRetries, statusCode, lastErr)
 		}
 
-		c.sleep(backoffDelay(attempt, c.baseDelay, c.maxDelay))
+		delay := backoffDelay(attempt, c.baseDelay, c.maxDelay)
+		c.logger.Warn("retryable error, backing off",
+			"operation", operation,
+			"attempt", attempt+1,
+			"max_retries", c.maxRetries,
+			"status", statusCode,
+			"delay", delay,
+		)
+		c.sleep(delay)
 	}
 	return lastErr
 }

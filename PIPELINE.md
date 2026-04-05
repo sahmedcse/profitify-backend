@@ -2,7 +2,7 @@
 
 ## Overview
 
-Daily pipeline that ingests OHLCV data for all US equities (~5,000-8,000 tickers) from Polygon.io, enriches each ticker with fundamentals, dividends, news/sentiment, related companies, and technical indicators, then computes daily and rolling statistics. Runs after market close via EventBridge.
+Daily pipeline that ingests OHLCV data for all US equities (~5,000-8,000 tickers) from Massive, enriches each ticker with fundamentals, dividends, news/sentiment, related companies, and technical indicators, then computes daily and rolling statistics. Runs after market close via EventBridge.
 
 **Architecture: SQS + Step Functions hybrid.** SQS handles fan-out (no S3 dependency), and each SQS message triggers a child Step Function with 3 sequential stages per ticker for granular retry and observability.
 
@@ -12,7 +12,7 @@ Daily pipeline that ingests OHLCV data for all US equities (~5,000-8,000 tickers
 EventBridge (daily 4:30pm ET)
     ↓
 Lambda: FetchTickers
-  → Polygon /v3/reference/tickers (paginated, all active US equities)
+  → Massive /v3/reference/tickers (paginated, all active US equities)
   → Sends ~8,000 SQS messages (one per ticker, includes date)
   → Upserts tickers reference table
     ↓
@@ -23,18 +23,18 @@ SQS Queue
 Child Step Function (per ticker, 3 sequential stages):
     ↓
   Stage A — Lambda: IngestOHLCV
-    → Polygon /v1/open-close/{ticker}/{date}
+    → Massive /v1/open-close/{ticker}/{date}
     → Upsert daily_prices in TimescaleDB (OHLCV + pre-market + after-hours)
     ↓
   Stage B — Lambda: EnrichTicker (sequential sub-steps)
-    → Polygon /v3/reference/tickers/{ticker}       (fundamentals)
-    → Polygon /v3/reference/dividends?ticker=       (dividends)
-    → Polygon /v2/reference/news?ticker={ticker}    (news + per-ticker sentiment)
-    → Polygon /v1/related-companies/{ticker}         (related tickers)
-    → Polygon /v1/indicators/sma/{ticker}            (SMA 20/50/200)
-    → Polygon /v1/indicators/ema/{ticker}            (EMA 12/26)
-    → Polygon /v1/indicators/rsi/{ticker}            (RSI 14)
-    → Polygon /v1/indicators/macd/{ticker}           (MACD line/signal/histogram)
+    → Massive /v3/reference/tickers/{ticker}       (fundamentals)
+    → Massive /v3/reference/dividends?ticker=       (dividends)
+    → Massive /v2/reference/news?ticker={ticker}    (news + per-ticker sentiment)
+    → Massive /v1/related-companies/{ticker}         (related tickers)
+    → Massive /v1/indicators/sma/{ticker}            (SMA 20/50/200)
+    → Massive /v1/indicators/ema/{ticker}            (EMA 12/26)
+    → Massive /v1/indicators/rsi/{ticker}            (RSI 14)
+    → Massive /v1/indicators/macd/{ticker}           (MACD line/signal/histogram)
     → Self-compute Bollinger Bands, ATR(14), OBV from OHLCV in DB
     → Upsert to 7 tables (see Database Schema)
     ↓
@@ -56,15 +56,15 @@ Failed messages (after SFN retries exhaust) → DLQ for inspection
 |----------|--------|-----------|
 | Fan-out mechanism | SQS | No S3 bucket needed, natural backpressure, simple concurrency control via Lambda MaxConcurrency |
 | Per-ticker orchestration | Child Step Function | 3 Task states for granular per-stage retry and visual debugging in the console |
-| Concurrency | SQS MaxConcurrency=200 | Controls parallel child SFN executions; Polygon Business plan has no rate limit |
+| Concurrency | SQS MaxConcurrency=200 | Controls parallel child SFN executions; Massive Business plan has no rate limit |
 | SQS visibility timeout | 15 minutes | Long enough for child SFN to complete all 3 stages |
 | Failure handling | DLQ after 3 SQS retries | Failed tickers land in DLQ for manual inspection/retry |
-| Stage B structure | Sequential within one Lambda | Simpler than parallel sub-steps; sufficient with unlimited Polygon plan |
+| Stage B structure | Sequential within one Lambda | Simpler than parallel sub-steps; sufficient with unlimited Massive plan |
 | DB writes | `ON CONFLICT DO UPDATE` everywhere | All stages are idempotent — safe to retry at any point |
 | Price precision | NUMERIC(18,6) | Sub-penny precision for all equities |
 | Chunk interval | 1 month | 8K rows/day too small for daily chunks; monthly is optimal for compression |
 | Primary keys | UUID (`gen_random_uuid()`) | All tables use UUID PK; ticker symbol is a UNIQUE column; child tables reference via `ticker_id` FK |
-| Technical indicators | Hybrid (Polygon + self-computed) | SMA/EMA/RSI/MACD from Polygon (split-adjusted); Bollinger/ATR/OBV computed from OHLCV data |
+| Technical indicators | Hybrid (Massive + self-computed) | SMA/EMA/RSI/MACD from Massive (split-adjusted); Bollinger/ATR/OBV computed from OHLCV data |
 | Config | Per-Lambda config structs | Each Lambda loads only the env vars it needs; fail-fast on missing required vars |
 | Trade data | Skipped | Individual trades = ~400M rows/day at ~$10K+/year storage. Daily aggregates sufficient for current needs. |
 
@@ -81,17 +81,17 @@ Failed messages (after SFN retries exhaust) → DLQ for inspection
 
 ### Stage A: Ingest OHLCV
 
-Fetches one day of OHLCV data for a single ticker from Polygon and writes it to TimescaleDB.
+Fetches one day of OHLCV data for a single ticker from Massive and writes it to TimescaleDB.
 
-- **Polygon endpoint:** `GET /v1/open-close/{ticker}/{date}`
+- **Massive endpoint:** `GET /v1/open-close/{ticker}/{date}`
 - **DB table:** `daily_prices` (hypertable)
 - **Fields:** open, high, low, close, volume, vwap, pre_market, after_hours, otc
 
 ### Stage B: Enrich Ticker
 
-Fetches company fundamentals, dividends, news, related companies, and technical indicators from Polygon. Computes Bollinger Bands, ATR, and OBV from historical OHLCV data in the database.
+Fetches company fundamentals, dividends, news, related companies, and technical indicators from Massive. Computes Bollinger Bands, ATR, and OBV from historical OHLCV data in the database.
 
-**Polygon API calls (sequential, ~11 calls per ticker):**
+**Massive API calls (sequential, ~11 calls per ticker):**
 1. `GET /v3/reference/tickers/{ticker}` → fundamentals (market cap, sector, SIC, employees, address, branding)
 2. `GET /v3/reference/dividends?ticker={ticker}` → dividend history (amount, ex-date, frequency, distribution type)
 3. `GET /v2/reference/news?ticker={ticker}&limit=10` → news articles with per-ticker sentiment insights
@@ -171,21 +171,21 @@ internal/
     ticker_fundamentals.go    #   TickerFundamentals, Address, Branding
     daily_price.go            #   DailyPrice (OHLCV + pre-market + after-hours)
     ticker_snapshot.go        #   TickerSnapshot, Bar, MinuteBar, LastTrade, LastQuote
-    ticker_technicals.go      #   TechnicalIndicators (Polygon: SMA/EMA/RSI/MACD; self: Bollinger/ATR/OBV)
+    ticker_technicals.go      #   TechnicalIndicators (Massive: SMA/EMA/RSI/MACD; self: Bollinger/ATR/OBV)
     ticker_stats.go           #   TickerStats (daily metrics + rolling price/dividend/total return + 52w)
     ticker_news.go            #   TickerNews (article with keywords, publisher, mentioned tickers)
     ticker_news_insight.go    #   TickerNewsInsight (per-ticker sentiment + reasoning)
     ticker_news_summary.go    #   TickerNewsSummary (daily aggregate: article count, avg sentiment)
-    ticker_dividend.go        #   TickerDividend (raw Polygon: amount, ex-date, frequency, type)
+    ticker_dividend.go        #   TickerDividend (raw Massive: amount, ex-date, frequency, type)
     ticker_dividend_summary.go    #   TickerDividendSummary (yield, growth rate, streak)
     ticker_dividend_analytics.go  #   TickerDividendAnalytics (sector comparison, income quality)
-    related_ticker.go         #   RelatedTicker (Polygon-sourced)
+    related_ticker.go         #   RelatedTicker (Massive-sourced)
     ticker_correlation.go     #   TickerCorrelation (30d/90d return correlation with rank)
     ticker_lead_lag.go        #   TickerLeadLag (predictive score with rank)
     ticker_volume_profile.go  #   TickerVolumeProfile (similarity score with rank)
     ticker_volatility_cluster.go  #   TickerVolatilityCluster (cluster ID, volatility, rank)
 
-  polygon/                    # Polygon.io REST API client
+  massive/                    # Massive REST API client
     client.go                 #   HTTP client with auth, rate limiting, retry on 429
     tickers.go                #   FetchActiveTickers (paginated cursor)
     aggregates.go             #   FetchDailyOHLCV
@@ -227,7 +227,7 @@ internal/
 
   pipeline/                   # Shared pipeline types and utilities
     event.go                  #   TickerEvent, FetchTickersOutput
-    errors.go                 #   RateLimitError, PolygonAPIError, DatabaseError
+    errors.go                 #   RateLimitError, MassiveAPIError, DatabaseError
     sqs.go                    #   SendTickerMessages (batch send)
 ```
 
@@ -250,7 +250,7 @@ All tables use UUID primary keys with `gen_random_uuid()`. The `tickers` table h
 | `ticker_dividends` | `(id)` | Regular | Raw dividend events: amount, ex-date, pay-date, frequency, distribution type |
 | `ticker_dividend_summaries` | `(id, time)` | Hypertable | Yield (current/forward/trailing), growth rates, consecutive increase streak |
 | `ticker_dividend_analytics` | `(id, time)` | Hypertable | Yield vs sector avg, income quality score, ex-dividend price impact |
-| `related_tickers` | `(id)` | Regular | Polygon-sourced related company relationships |
+| `related_tickers` | `(id)` | Regular | Massive-sourced related company relationships |
 | `ticker_correlations` | `(id, time)` | Hypertable | 30d/90d Pearson return correlations with rank |
 | `ticker_lead_lag` | `(id, time)` | Hypertable | Lead/lag predictive relationships with rank |
 | `ticker_volume_profiles` | `(id, time)` | Hypertable | Volume pattern similarity scores with rank |
@@ -267,7 +267,7 @@ Each Task state in the child Step Function has retry configuration:
 | Error Type | Max Attempts | Initial Interval | Backoff Rate |
 |-----------|-------------|-------------------|-------------|
 | `RateLimitError` | 5 | 15s | 2.5x |
-| `PolygonAPIError` | 3 | 5s | 2.0x |
+| `MassiveAPIError` | 3 | 5s | 2.0x |
 | `DatabaseError` | 3 | 3s | 2.0x |
 
 After all retries exhaust, the stage routes to a `RecordFailure` catch state that logs `{ticker, stage, error, timestamp}`.
@@ -291,7 +291,7 @@ Per-Lambda config structs — each Lambda loads only the env vars it needs.
 | Variable | Used By | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | fetch-tickers, ingest-ohlcv, enrich-ticker, compute-stats | PostgreSQL/TimescaleDB connection string |
-| `POLYGON_API_KEY` | fetch-tickers, ingest-ohlcv, enrich-ticker | Polygon.io API key (Business plan) |
+| `MASSIVE_API_KEY` | fetch-tickers, ingest-ohlcv, enrich-ticker | Massive API key (Business plan) |
 | `SQS_QUEUE_URL` | fetch-tickers | SQS queue URL for ticker fan-out |
 | `SFN_ARN` | start-pipeline | Child Step Function ARN for per-ticker pipeline |
 | `API_PORT` | api server | HTTP server port (default: 8080) |
@@ -304,7 +304,7 @@ github.com/aws/aws-sdk-go-v2
 github.com/aws/aws-sdk-go-v2/config
 github.com/aws/aws-sdk-go-v2/service/sqs
 github.com/aws/aws-sdk-go-v2/service/sfn
-golang.org/x/time                        # rate.Limiter for Polygon client
+golang.org/x/time                        # rate.Limiter for Massive client
 ```
 
 ## Build
@@ -325,7 +325,7 @@ Implementation is sliced vertically by Lambda function. Each branch delivers a c
 
 | Package | Files | Description |
 |---------|-------|-------------|
-| `polygon` | `client.go`, `tickers.go` | Base HTTP client (auth, rate limiter, retry), paginated ticker fetch |
+| `massive` | `client.go`, `tickers.go` | Base HTTP client (auth, rate limiter, retry), paginated ticker fetch |
 | `repository` | `repository.go`, `ticker.go` | Interface definitions + ticker CRUD (UpsertBatch, GetActive, GetBySymbol) |
 | `pipeline` | `event.go`, `errors.go`, `sqs.go` | TickerEvent type, custom error types, SQS batch send |
 | `cmd/` | `lambda-fetch-tickers/`, `lambda-start-pipeline/` | Lambda entrypoints |
@@ -338,7 +338,7 @@ Implementation is sliced vertically by Lambda function. Each branch delivers a c
 
 | Package | Files | Description |
 |---------|-------|-------------|
-| `polygon` | `aggregates.go` | Fetch daily OHLCV from `/v1/open-close/{ticker}/{date}` |
+| `massive` | `aggregates.go` | Fetch daily OHLCV from `/v1/open-close/{ticker}/{date}` |
 | `repository` | `daily_price.go` | Upsert, GetHistorical, GetLatest |
 | `cmd/` | `lambda-ingest-ohlcv/` | Lambda entrypoint |
 
@@ -348,10 +348,10 @@ Implementation is sliced vertically by Lambda function. Each branch delivers a c
 
 | Package | Files | Description |
 |---------|-------|-------------|
-| `polygon` | `fundamentals.go`, `dividends.go`, `news.go`, `related.go`, `indicators.go` | 5 Polygon API endpoint clients |
+| `massive` | `fundamentals.go`, `dividends.go`, `news.go`, `related.go`, `indicators.go` | 5 Massive API endpoint clients |
 | `repository` | 6 files | Upsert for fundamentals, dividends, news, news_insights, related, technicals |
 | `indicator` | `bollinger.go`, `atr.go`, `obv.go` | Pure math functions for self-computed indicators |
-| `cmd/` | `lambda-enrich-ticker/` | Lambda entrypoint: 11 Polygon calls → self-compute → upsert |
+| `cmd/` | `lambda-enrich-ticker/` | Lambda entrypoint: 11 Massive calls → self-compute → upsert |
 
 ### Branch 4: `feature/lambda-compute-stats`
 
@@ -366,5 +366,5 @@ Implementation is sliced vertically by Lambda function. Each branch delivers a c
 ### Design Patterns
 
 - **Repository interfaces**: Defined in `internal/repository/repository.go`. Each repo has a concrete struct taking `*pgxpool.Pool` via constructor. Interfaces enable unit testing Lambda handlers with mocks.
-- **Polygon client**: Methods on `*Client` receiver, return domain types directly. API response structs are unexported (private to polygon package). Retry on 429 (with Retry-After) and 5xx (exponential backoff).
-- **Testing**: Unit tests use `httptest.NewServer` for Polygon and mock interfaces for repos. Integration tests run against Docker DB. Table-driven tests everywhere.
+- **Massive client**: Methods on `*Client` receiver, return domain types directly. API response structs are unexported (private to massive package). Retry on 429 (with Retry-After) and 5xx (exponential backoff).
+- **Testing**: Unit tests use `httptest.NewServer` for Massive and mock interfaces for repos. Integration tests run against Docker DB. Table-driven tests everywhere.

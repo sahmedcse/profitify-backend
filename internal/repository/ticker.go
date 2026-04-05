@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,18 +13,21 @@ import (
 
 // tickerRepo implements TickerRepository using pgx.
 type tickerRepo struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	logger *slog.Logger
 }
 
 // NewTickerRepo creates a new TickerRepository backed by the given connection pool.
-func NewTickerRepo(pool *pgxpool.Pool) TickerRepository {
-	return &tickerRepo{pool: pool}
+func NewTickerRepo(pool *pgxpool.Pool, logger *slog.Logger) TickerRepository {
+	return &tickerRepo{pool: pool, logger: logger}
 }
 
 func (r *tickerRepo) UpsertBatch(ctx context.Context, tickers []domain.Ticker) error {
 	if len(tickers) == 0 {
 		return nil
 	}
+
+	r.logger.Info("upserting tickers", "count", len(tickers))
 
 	batch := &pgx.Batch{}
 	const query = `

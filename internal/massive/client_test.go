@@ -1,13 +1,17 @@
-package polygon
+package massive
 
 import (
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/massive-com/client-go/v2/rest/models"
 )
+
+var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func TestIsRetryable(t *testing.T) {
 	tests := []struct {
@@ -114,6 +118,7 @@ func TestBackoffDelay(t *testing.T) {
 
 func TestRetry_SucceedsImmediately(t *testing.T) {
 	c := &Client{
+		logger:     discardLogger,
 		maxRetries: 3,
 		baseDelay:  time.Millisecond,
 		maxDelay:   time.Millisecond,
@@ -136,6 +141,7 @@ func TestRetry_SucceedsImmediately(t *testing.T) {
 
 func TestRetry_RetriesOnRetryableError(t *testing.T) {
 	c := &Client{
+		logger:     discardLogger,
 		maxRetries: 3,
 		baseDelay:  time.Millisecond,
 		maxDelay:   time.Millisecond,
@@ -161,6 +167,7 @@ func TestRetry_RetriesOnRetryableError(t *testing.T) {
 
 func TestRetry_StopsOnNonRetryableError(t *testing.T) {
 	c := &Client{
+		logger:     discardLogger,
 		maxRetries: 3,
 		baseDelay:  time.Millisecond,
 		maxDelay:   time.Millisecond,
@@ -183,6 +190,7 @@ func TestRetry_StopsOnNonRetryableError(t *testing.T) {
 
 func TestRetry_ExhaustsMaxRetries(t *testing.T) {
 	c := &Client{
+		logger:     discardLogger,
 		maxRetries: 2,
 		baseDelay:  time.Millisecond,
 		maxDelay:   time.Millisecond,
@@ -214,6 +222,7 @@ func TestRetry_ExhaustsMaxRetries(t *testing.T) {
 func TestRetry_CallsSleepBetweenAttempts(t *testing.T) {
 	var sleepDurations []time.Duration
 	c := &Client{
+		logger:     discardLogger,
 		maxRetries: 2,
 		baseDelay:  2 * time.Second,
 		maxDelay:   30 * time.Second,

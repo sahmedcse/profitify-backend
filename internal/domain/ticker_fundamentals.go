@@ -16,7 +16,7 @@ type Branding struct {
 	LogoURL string `json:"logo_url"`
 }
 
-// TickerFundamentals holds company fundamental data from Polygon.io ticker details.
+// TickerFundamentals holds company fundamental data from Massive ticker details.
 type TickerFundamentals struct {
 	ID                        string    `json:"id"`
 	TickerID                  string    `json:"ticker_id"`

@@ -3,6 +3,8 @@ package repository_test
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"os"
 	"testing"
 
@@ -12,6 +14,8 @@ import (
 	"github.com/profitify/profitify-backend/internal/domain"
 	"github.com/profitify/profitify-backend/internal/repository"
 )
+
+var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 // testPool returns a pgxpool connected to the test database.
 // Skips the test if DATABASE_URL is not set.
@@ -42,7 +46,7 @@ func TestUpsertBatch_InsertsNewTickers(t *testing.T) {
 	pool := testPool(t)
 	cleanTickers(t, pool)
 
-	repo := repository.NewTickerRepo(pool)
+	repo := repository.NewTickerRepo(pool, discardLogger)
 	ctx := context.Background()
 
 	tickers := []domain.Ticker{
@@ -75,7 +79,7 @@ func TestUpsertBatch_UpdatesOnConflict(t *testing.T) {
 	pool := testPool(t)
 	cleanTickers(t, pool)
 
-	repo := repository.NewTickerRepo(pool)
+	repo := repository.NewTickerRepo(pool, discardLogger)
 	ctx := context.Background()
 
 	// Insert initial
@@ -106,7 +110,7 @@ func TestUpsertBatch_UpdatesOnConflict(t *testing.T) {
 func TestUpsertBatch_EmptySlice(t *testing.T) {
 	pool := testPool(t)
 
-	repo := repository.NewTickerRepo(pool)
+	repo := repository.NewTickerRepo(pool, discardLogger)
 	err := repo.UpsertBatch(context.Background(), nil)
 	if err != nil {
 		t.Errorf("UpsertBatch(nil) should be no-op, got: %v", err)
@@ -117,7 +121,7 @@ func TestGetActive_FiltersInactiveTickers(t *testing.T) {
 	pool := testPool(t)
 	cleanTickers(t, pool)
 
-	repo := repository.NewTickerRepo(pool)
+	repo := repository.NewTickerRepo(pool, discardLogger)
 	ctx := context.Background()
 
 	err := repo.UpsertBatch(ctx, []domain.Ticker{
@@ -147,7 +151,7 @@ func TestGetBySymbol_NotFound(t *testing.T) {
 	pool := testPool(t)
 	cleanTickers(t, pool)
 
-	repo := repository.NewTickerRepo(pool)
+	repo := repository.NewTickerRepo(pool, discardLogger)
 	_, err := repo.GetBySymbol(context.Background(), "NONEXIST")
 	if err == nil {
 		t.Fatal("expected error for non-existent ticker, got nil")
@@ -161,7 +165,7 @@ func TestGetBySymbol_ReturnsFull(t *testing.T) {
 	pool := testPool(t)
 	cleanTickers(t, pool)
 
-	repo := repository.NewTickerRepo(pool)
+	repo := repository.NewTickerRepo(pool, discardLogger)
 	ctx := context.Background()
 
 	err := repo.UpsertBatch(ctx, []domain.Ticker{
