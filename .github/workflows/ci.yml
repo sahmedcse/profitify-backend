@@ -44,6 +44,19 @@ jobs:
             coverage.out
             coverage.html
 
+  test-integration:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.23"
+      - name: Start DB and run migrations
+        run: make docker-up
+      - name: Run integration tests
+        run: make test-integration
+
   build:
     name: Build
     runs-on: ubuntu-latest

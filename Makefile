@@ -1,4 +1,4 @@
-.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql
+.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql
 
 # Docker parameters
 DOCKER_COMPOSE=docker compose
@@ -50,6 +50,10 @@ test-cover:
 	$(GOTEST) -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
+
+## test-integration: Run integration tests against Docker DB
+test-integration:
+	DATABASE_URL=$(DOCKER_DB_URL) $(GOTEST) -count=1 ./...
 
 ## vet: Run go vet
 vet:
