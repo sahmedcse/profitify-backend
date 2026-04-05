@@ -16,6 +16,8 @@ import (
 func (c *Client) FetchActiveTickers(ctx context.Context) ([]domain.Ticker, error) {
 	var tickers []domain.Ticker
 
+	c.logger.Info("fetching active tickers from Polygon")
+
 	err := c.retry("FetchActiveTickers", func() error {
 		tickers = nil // reset on retry
 
@@ -40,6 +42,7 @@ func (c *Client) FetchActiveTickers(ctx context.Context) ([]domain.Ticker, error
 		return nil, fmt.Errorf("polygon.FetchActiveTickers: %w", err)
 	}
 
+	c.logger.Info("fetched active tickers", "count", len(tickers))
 	return tickers, nil
 }
 

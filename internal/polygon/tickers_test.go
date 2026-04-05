@@ -3,6 +3,8 @@ package polygon
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -33,6 +35,7 @@ func newTestClient(ts *httptest.Server) *Client {
 	}
 	return &Client{
 		sdk:        massive.NewWithClient("test-key", httpClient),
+		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		maxRetries: 3,
 		baseDelay:  time.Millisecond,
 		maxDelay:   time.Millisecond,
