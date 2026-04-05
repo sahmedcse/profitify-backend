@@ -1,0 +1,32 @@
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    container_name: profitify-db
+    environment:
+      POSTGRES_USER: profitify
+      POSTGRES_PASSWORD: profitify
+      POSTGRES_DB: profitify
+    ports:
+      - "5432:5432"
+    volumes:
+      - profitify-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U profitify -d profitify"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: build/migrate.Dockerfile
+    container_name: profitify-migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./db/migrations:/migrations
+    command: ["-dir", "/migrations", "postgres", "postgres://profitify:profitify@db:5432/profitify?sslmode=disable", "up"]
+
+volumes:
+  profitify-db-data:
