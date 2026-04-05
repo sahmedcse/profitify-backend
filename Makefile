@@ -29,8 +29,12 @@ build-api:
 build-cron:
 	$(GOBUILD) -o $(BINARY_DIR)/cron ./cmd/cron
 
+## build-lambda-fetch-tickers: Build FetchTickers Lambda (linux/arm64)
+build-lambda-fetch-tickers:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-fetch-tickers/bootstrap ./cmd/lambda-fetch-tickers
+
 ## build-lambdas: Build all Lambda functions (linux/arm64 for Graviton2)
-build-lambdas:
+build-lambdas: build-lambda-fetch-tickers
 	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-example/bootstrap ./cmd/lambda-example
 
 ## lint: Run golangci-lint
