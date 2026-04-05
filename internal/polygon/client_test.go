@@ -222,7 +222,7 @@ func TestRetry_CallsSleepBetweenAttempts(t *testing.T) {
 		},
 	}
 
-	c.retry("test", func() error {
+	_ = c.retry("test", func() error {
 		return &models.ErrorResponse{StatusCode: 429}
 	})
 

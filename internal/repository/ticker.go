@@ -50,7 +50,7 @@ func (r *tickerRepo) UpsertBatch(ctx context.Context, tickers []domain.Ticker) e
 	}
 
 	br := r.pool.SendBatch(ctx, batch)
-	defer br.Close()
+	defer func() { _ = br.Close() }()
 
 	for i := 0; i < len(tickers); i++ {
 		if _, err := br.Exec(); err != nil {

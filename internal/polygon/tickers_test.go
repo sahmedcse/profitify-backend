@@ -148,7 +148,7 @@ func TestMapTicker_ZeroDates(t *testing.T) {
 func TestFetchActiveTickers_Success(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status":     "OK",
 			"request_id": "test-123",
 			"results": []map[string]any{
@@ -196,7 +196,7 @@ func TestFetchActiveTickers_Success(t *testing.T) {
 func TestFetchActiveTickers_EmptyResults(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status":     "OK",
 			"request_id": "test-123",
 			"results":    []any{},
@@ -221,14 +221,14 @@ func TestFetchActiveTickers_RetriesOn429(t *testing.T) {
 		if calls <= 1 {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"status": "ERROR",
 				"error":  "rate limited",
 			})
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status":     "OK",
 			"request_id": "test-123",
 			"results": []map[string]any{
