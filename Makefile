@@ -1,4 +1,4 @@
-.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql
+.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down
 
 # Docker parameters
 DOCKER_COMPOSE=docker compose
@@ -115,3 +115,15 @@ docker-migrate-status:
 ## docker-psql: Open psql shell to local Docker DB
 docker-psql:
 	docker exec -it profitify-db psql -U profitify -d profitify
+
+## docker-lambda-fetch-tickers-up: Build and start FetchTickers Lambda locally (RIE on :9000)
+docker-lambda-fetch-tickers-up:
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-fetch-tickers
+
+## docker-lambda-fetch-tickers-invoke: Invoke the local FetchTickers Lambda via the RIE
+docker-lambda-fetch-tickers-invoke:
+	curl -sS -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}' && echo
+
+## docker-lambda-fetch-tickers-down: Stop the local FetchTickers Lambda container
+docker-lambda-fetch-tickers-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-fetch-tickers
