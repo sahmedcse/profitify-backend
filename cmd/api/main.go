@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/profitify/profitify-backend/internal/api"
+	"github.com/profitify/profitify-backend/internal/api/handler"
 	"github.com/profitify/profitify-backend/internal/config"
 	"github.com/profitify/profitify-backend/internal/db"
+	"github.com/profitify/profitify-backend/internal/repository"
 )
 
 func main() {
@@ -38,7 +40,16 @@ func main() {
 
 	logger.Info("database connected")
 
-	router := api.NewRouter(logger)
+	handlers := &handler.Handlers{
+		Tickers:           repository.NewTickerRepo(pool, logger),
+		Prices:            repository.NewDailyPriceRepo(pool, logger),
+		Technicals:        repository.NewTickerTechnicalsRepo(pool, logger),
+		Fundamentals:      repository.NewTickerFundamentalsRepo(pool, logger),
+		Stats:             repository.NewTickerStatsRepo(pool, logger),
+		DividendSummaries: repository.NewTickerDividendSummaryRepo(pool, logger),
+		Logger:            logger,
+	}
+	router := api.NewRouter(logger, handlers)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.APIPort),

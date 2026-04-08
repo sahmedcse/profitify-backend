@@ -37,4 +37,11 @@ type TechnicalIndicators struct {
 
 	// On-Balance Volume (self-computed)
 	OBV *float64 `json:"obv"`
+
+	// IndicatorStatuses holds per-indicator bullish/neutral/bearish
+	// classifications materialized by the enrich-ticker pipeline. The keys
+	// are the indicator names from internal/signal (rsi_14, macd, sma_20,
+	// sma_50, ema_12, bollinger) and values are signal.Status strings.
+	// Stored as JSONB in ticker_technicals.indicator_statuses.
+	IndicatorStatuses map[string]string `json:"indicator_statuses"`
 }
