@@ -41,7 +41,7 @@ services:
         condition: service_completed_successfully
     environment:
       DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
-      MASSIVE_API_KEY: ${MASSIVE_API_KEY:?MASSIVE_API_KEY must be set in your environment or .env file}
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
       APP_ENV: development
     ports:
       - "9000:8080"

@@ -118,6 +118,11 @@ docker-psql:
 
 ## docker-lambda-fetch-tickers-up: Build and start FetchTickers Lambda locally (RIE on :9000)
 docker-lambda-fetch-tickers-up:
+	@if [ -z "$$MASSIVE_API_KEY" ]; then \
+		echo "ERROR: MASSIVE_API_KEY must be set to run the FetchTickers Lambda locally." >&2; \
+		echo "       Export it in your shell or add it to .env before running this target." >&2; \
+		exit 1; \
+	fi
 	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-fetch-tickers
 
 ## docker-lambda-fetch-tickers-invoke: Invoke the local FetchTickers Lambda via the RIE
