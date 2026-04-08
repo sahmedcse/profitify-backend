@@ -1,4 +1,4 @@
-.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql
+.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down
 
 # Docker parameters
 DOCKER_COMPOSE=docker compose
@@ -29,8 +29,12 @@ build-api:
 build-cron:
 	$(GOBUILD) -o $(BINARY_DIR)/cron ./cmd/cron
 
+## build-lambda-fetch-tickers: Build FetchTickers Lambda (linux/arm64)
+build-lambda-fetch-tickers:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-fetch-tickers/bootstrap ./cmd/lambda-fetch-tickers
+
 ## build-lambdas: Build all Lambda functions (linux/arm64 for Graviton2)
-build-lambdas:
+build-lambdas: build-lambda-fetch-tickers
 	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-example/bootstrap ./cmd/lambda-example
 
 ## lint: Run golangci-lint
@@ -111,3 +115,20 @@ docker-migrate-status:
 ## docker-psql: Open psql shell to local Docker DB
 docker-psql:
 	docker exec -it profitify-db psql -U profitify -d profitify
+
+## docker-lambda-fetch-tickers-up: Build and start FetchTickers Lambda locally (RIE on :9000)
+docker-lambda-fetch-tickers-up:
+	@if [ -z "$$MASSIVE_API_KEY" ]; then \
+		echo "ERROR: MASSIVE_API_KEY must be set to run the FetchTickers Lambda locally." >&2; \
+		echo "       Export it in your shell or add it to .env before running this target." >&2; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-fetch-tickers
+
+## docker-lambda-fetch-tickers-invoke: Invoke the local FetchTickers Lambda via the RIE
+docker-lambda-fetch-tickers-invoke:
+	curl -sS -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}' && echo
+
+## docker-lambda-fetch-tickers-down: Stop the local FetchTickers Lambda container
+docker-lambda-fetch-tickers-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-fetch-tickers
