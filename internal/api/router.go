@@ -10,8 +10,14 @@ import (
 	"github.com/profitify/profitify-backend/internal/middleware"
 )
 
-// NewRouter creates and configures a Chi router with standard middleware and routes.
-func NewRouter(logger *slog.Logger) *chi.Mux {
+// NewRouter creates and configures a Chi router with standard middleware,
+// the health endpoint, and the dashboard API mounted under /v1.
+//
+// All dashboard endpoints are thin reads against the materialized
+// dashboard columns — no per-request computation. The Handlers struct
+// holds repository dependencies which are injected from main.go for
+// trivial unit-test substitution.
+func NewRouter(logger *slog.Logger, h *handler.Handlers) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chimw.RequestID)
@@ -20,6 +26,16 @@ func NewRouter(logger *slog.Logger) *chi.Mux {
 	r.Use(chimw.Recoverer)
 
 	r.Get("/health", handler.Health)
+
+	r.Route("/v1", func(r chi.Router) {
+		r.Get("/tickers", h.ListTickers)
+		r.Get("/tickers/{symbol}", h.GetTicker)
+		r.Get("/tickers/{symbol}/prices", h.GetPrices)
+		r.Get("/tickers/{symbol}/technicals", h.GetTechnicals)
+		r.Get("/tickers/{symbol}/fundamentals", h.GetFundamentals)
+		r.Get("/tickers/{symbol}/levels", h.GetLevels)
+		r.Get("/compare", h.GetCompare)
+	})
 
 	return r
 }
