@@ -28,5 +28,23 @@ services:
       - ./db/migrations:/migrations
     command: ["-dir", "/migrations", "postgres", "postgres://profitify:profitify@db:5432/profitify?sslmode=disable", "up"]
 
+  lambda-fetch-tickers:
+    build:
+      context: .
+      dockerfile: build/lambda-fetch-tickers.Dockerfile
+    container_name: profitify-lambda-fetch-tickers
+    profiles: ["lambda"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      APP_ENV: development
+    ports:
+      - "9000:8080"
+
 volumes:
   profitify-db-data:
