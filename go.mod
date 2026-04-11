@@ -3,7 +3,7 @@ module github.com/profitify/profitify-backend
 go 1.23.0
 
 require (
-	github.com/aws/aws-lambda-go v1.47.0
+	github.com/aws/aws-lambda-go v1.54.0
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/jackc/pgx/v5 v5.7.4
 	github.com/massive-com/client-go/v2 v2.0.0
