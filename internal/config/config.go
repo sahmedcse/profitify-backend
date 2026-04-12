@@ -96,6 +96,52 @@ func LoadIngestOHLCV() (*IngestOHLCVConfig, error) {
 	}, nil
 }
 
+// FetchTechnicalsConfig holds configuration for the fetch-technicals Lambda.
+type FetchTechnicalsConfig struct {
+	DatabaseURL   string
+	MassiveAPIKey string
+}
+
+// LoadFetchTechnicals reads fetch-technicals Lambda configuration.
+func LoadFetchTechnicals() (*FetchTechnicalsConfig, error) {
+	dbURL, err := required("DATABASE_URL")
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := required("MASSIVE_API_KEY")
+	if err != nil {
+		return nil, err
+	}
+
+	return &FetchTechnicalsConfig{
+		DatabaseURL:   dbURL,
+		MassiveAPIKey: apiKey,
+	}, nil
+}
+
+// FetchFundamentalsConfig holds configuration for the fetch-fundamentals Lambda.
+type FetchFundamentalsConfig struct {
+	DatabaseURL   string
+	MassiveAPIKey string
+}
+
+// LoadFetchFundamentals reads fetch-fundamentals Lambda configuration.
+func LoadFetchFundamentals() (*FetchFundamentalsConfig, error) {
+	dbURL, err := required("DATABASE_URL")
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := required("MASSIVE_API_KEY")
+	if err != nil {
+		return nil, err
+	}
+
+	return &FetchFundamentalsConfig{
+		DatabaseURL:   dbURL,
+		MassiveAPIKey: apiKey,
+	}, nil
+}
+
 // EnrichTickerConfig holds configuration for the enrich-ticker Lambda.
 type EnrichTickerConfig struct {
 	DatabaseURL   string

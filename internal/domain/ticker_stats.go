@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // TickerStats holds daily and rolling window statistics for a ticker.
 // All values are computed from OHLCV data in the database.
@@ -46,4 +49,15 @@ type TickerStats struct {
 	Low52w             *float64 `json:"low_52w"`
 	DistFromHigh52wPct *float64 `json:"dist_from_high_52w_pct"`
 	DistFromLow52wPct  *float64 `json:"dist_from_low_52w_pct"`
+
+	// Dashboard materialization (written by compute-stats pipeline).
+	// SignalLabel is the human-readable summary (Strong Buy / Bullish /
+	// Neutral / Bearish / Strong Sell). SignalStrength is 0-100.
+	SignalLabel    string `json:"signal_label"`
+	SignalStrength int    `json:"signal_strength"`
+
+	// PivotLevels holds the computed S/R pivot payload as raw JSONB.
+	// Decoded shape matches internal/stats.PivotLevels; kept as
+	// json.RawMessage here to avoid an import cycle.
+	PivotLevels json.RawMessage `json:"pivot_levels"`
 }
