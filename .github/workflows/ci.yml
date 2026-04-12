@@ -71,6 +71,7 @@ jobs:
         run: |
           test -f bin/lambda-fetch-tickers/bootstrap
           test -f bin/lambda-ingest-ohlcv/bootstrap
+          test -f bin/lambda-fetch-technicals/bootstrap
 
   tidy-check:
     name: Tidy Check
