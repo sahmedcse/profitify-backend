@@ -74,6 +74,7 @@ jobs:
           test -f bin/lambda-fetch-technicals/bootstrap
           test -f bin/lambda-fetch-fundamentals/bootstrap
           test -f bin/lambda-enrich-ticker/bootstrap
+          test -f bin/lambda-compute-stats/bootstrap
 
   tidy-check:
     name: Tidy Check

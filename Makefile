@@ -1,4 +1,4 @@
-.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down build-lambda-enrich-ticker docker-lambda-enrich-ticker-up docker-lambda-enrich-ticker-invoke docker-lambda-enrich-ticker-down
+.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down build-lambda-enrich-ticker docker-lambda-enrich-ticker-up docker-lambda-enrich-ticker-invoke docker-lambda-enrich-ticker-down build-lambda-compute-stats docker-lambda-compute-stats-up docker-lambda-compute-stats-invoke docker-lambda-compute-stats-down
 
 # Docker parameters
 DOCKER_COMPOSE=docker compose
@@ -49,8 +49,12 @@ build-lambda-fetch-fundamentals:
 build-lambda-enrich-ticker:
 	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-enrich-ticker/bootstrap ./cmd/lambda-enrich-ticker
 
+## build-lambda-compute-stats: Build ComputeStats Lambda (linux/arm64)
+build-lambda-compute-stats:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-compute-stats/bootstrap ./cmd/lambda-compute-stats
+
 ## build-lambdas: Build all Lambda functions (linux/arm64 for Graviton2)
-build-lambdas: build-lambda-fetch-tickers build-lambda-ingest-ohlcv build-lambda-fetch-technicals build-lambda-fetch-fundamentals build-lambda-enrich-ticker
+build-lambdas: build-lambda-fetch-tickers build-lambda-ingest-ohlcv build-lambda-fetch-technicals build-lambda-fetch-fundamentals build-lambda-enrich-ticker build-lambda-compute-stats
 
 ## lint: Run golangci-lint
 lint:
@@ -207,3 +211,15 @@ docker-lambda-enrich-ticker-invoke:
 ## docker-lambda-enrich-ticker-down: Stop the local EnrichTicker Lambda container
 docker-lambda-enrich-ticker-down:
 	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-enrich-ticker
+
+## docker-lambda-compute-stats-up: Build and start ComputeStats Lambda locally (RIE on :9005)
+docker-lambda-compute-stats-up:
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-compute-stats
+
+## docker-lambda-compute-stats-invoke: Invoke the local ComputeStats Lambda
+docker-lambda-compute-stats-invoke:
+	curl -sS -XPOST "http://localhost:9005/2015-03-31/functions/function/invocations" -d '{"ticker":"AAPL","ticker_id":"","date":"2026-04-08"}' && echo
+
+## docker-lambda-compute-stats-down: Stop the local ComputeStats Lambda container
+docker-lambda-compute-stats-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-compute-stats
