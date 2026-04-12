@@ -16,6 +16,7 @@ type Ticker struct {
 	CIK             string    `json:"cik"`
 	ListDate        string    `json:"list_date"`
 	DelistedUTC     string    `json:"delisted_utc"`
+	Sector          string    `json:"sector"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
