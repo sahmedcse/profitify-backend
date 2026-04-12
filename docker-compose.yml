@@ -82,5 +82,23 @@ services:
     ports:
       - "9001:8080"
 
+  lambda-fetch-fundamentals:
+    build:
+      context: .
+      dockerfile: build/lambda-fetch-fundamentals.Dockerfile
+    container_name: profitify-lambda-fetch-fundamentals
+    profiles: ["lambda"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      APP_ENV: development
+    ports:
+      - "9003:8080"
+
 volumes:
   profitify-db-data:
