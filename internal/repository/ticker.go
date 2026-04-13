@@ -97,6 +97,14 @@ func (r *tickerRepo) GetBySymbol(ctx context.Context, symbol string) (*domain.Ti
 	return &t, nil
 }
 
+func (r *tickerRepo) UpdateSector(ctx context.Context, tickerID string, sector string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE tickers SET sector = $1, updated_at = NOW() WHERE id = $2`, sector, tickerID)
+	if err != nil {
+		return fmt.Errorf("tickerRepo.UpdateSector: %w", err)
+	}
+	return nil
+}
+
 func scanTickers(rows pgx.Rows) ([]domain.Ticker, error) {
 	var tickers []domain.Ticker
 	for rows.Next() {

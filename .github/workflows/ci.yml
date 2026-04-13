@@ -67,8 +67,10 @@ jobs:
           go-version: "1.23"
       - name: Build native binaries
         run: make build
-      - name: Verify Lambda bootstrap exists
-        run: test -f bin/lambda-example/bootstrap
+      - name: Verify Lambda bootstraps exist
+        run: |
+          test -f bin/lambda-fetch-tickers/bootstrap
+          test -f bin/lambda-ingest-ohlcv/bootstrap
 
   tidy-check:
     name: Tidy Check
