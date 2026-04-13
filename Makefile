@@ -214,6 +214,10 @@ docker-lambda-enrich-ticker-down:
 
 ## docker-lambda-compute-stats-up: Build and start ComputeStats Lambda locally (RIE on :9005)
 docker-lambda-compute-stats-up:
+	@if [ -z "$$MASSIVE_API_KEY" ]; then \
+		echo "ERROR: MASSIVE_API_KEY must be set." >&2; \
+		exit 1; \
+	fi
 	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-compute-stats
 
 ## docker-lambda-compute-stats-invoke: Invoke the local ComputeStats Lambda

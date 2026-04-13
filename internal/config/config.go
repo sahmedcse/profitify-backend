@@ -167,7 +167,8 @@ func LoadEnrichTicker() (*EnrichTickerConfig, error) {
 
 // ComputeStatsConfig holds configuration for the compute-stats Lambda.
 type ComputeStatsConfig struct {
-	DatabaseURL string
+	DatabaseURL   string
+	MassiveAPIKey string
 }
 
 // LoadComputeStats reads compute-stats Lambda configuration.
@@ -176,9 +177,14 @@ func LoadComputeStats() (*ComputeStatsConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	apiKey, err := required("MASSIVE_API_KEY")
+	if err != nil {
+		return nil, err
+	}
 
 	return &ComputeStatsConfig{
-		DatabaseURL: dbURL,
+		DatabaseURL:   dbURL,
+		MassiveAPIKey: apiKey,
 	}, nil
 }
 

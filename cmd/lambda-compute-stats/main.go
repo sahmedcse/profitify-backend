@@ -13,15 +13,16 @@ import (
 	"github.com/profitify/profitify-backend/internal/db"
 	"github.com/profitify/profitify-backend/internal/domain"
 	lambdautil "github.com/profitify/profitify-backend/internal/lambda"
+	"github.com/profitify/profitify-backend/internal/massive"
 	"github.com/profitify/profitify-backend/internal/pipeline"
 	"github.com/profitify/profitify-backend/internal/repository"
 	"github.com/profitify/profitify-backend/internal/signal"
 	"github.com/profitify/profitify-backend/internal/stats"
 )
 
-// priceReader abstracts the daily price repository for testing.
-type priceReader interface {
-	GetByTickerAndDateRange(ctx context.Context, tickerID string, from, to time.Time) ([]domain.DailyPrice, error)
+// barFetcher abstracts the Massive aggregates client for testing.
+type barFetcher interface {
+	FetchDailyBars(ctx context.Context, ticker string, from, to time.Time) ([]domain.DailyPrice, error)
 }
 
 // technicalsReader abstracts the technicals repository for testing.
@@ -46,7 +47,7 @@ type Response struct {
 func computeStats(
 	ctx context.Context,
 	event pipeline.TickerEvent,
-	prices priceReader,
+	bars barFetcher,
 	technicals technicalsReader,
 	writer statsWriter,
 	logger *slog.Logger,
@@ -60,9 +61,9 @@ func computeStats(
 		return nil, fmt.Errorf("parsing date %q: %w", event.Date, err)
 	}
 
-	// 1. Read OHLCV history (365 days for 52-week)
+	// 1. Fetch OHLCV history from Massive (365 days for 52-week)
 	from := date.AddDate(-1, 0, 0)
-	ohlcv, err := prices.GetByTickerAndDateRange(ctx, event.TickerID, from, date)
+	ohlcv, err := bars.FetchDailyBars(ctx, event.Ticker, from, date)
 	if err != nil {
 		return nil, fmt.Errorf("reading OHLCV for %s: %w", event.Ticker, err)
 	}
@@ -193,11 +194,11 @@ func handleRequest(ctx context.Context, event pipeline.TickerEvent) (*Response, 
 	}
 	defer pool.Close()
 
-	priceRepo := repository.NewDailyPriceRepo(pool, logger)
+	client := massive.NewClient(cfg.MassiveAPIKey, logger)
 	techRepo := repository.NewTickerTechnicalsRepo(pool, logger)
 	statsRepo := repository.NewTickerStatsRepo(pool, logger)
 
-	return computeStats(ctx, event, priceRepo, techRepo, statsRepo, logger)
+	return computeStats(ctx, event, client, techRepo, statsRepo, logger)
 }
 
 func main() {

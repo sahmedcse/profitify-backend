@@ -5,9 +5,72 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestFetchDailyBars_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/v2/aggs/ticker/AAPL/range/1/day/") {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":       "OK",
+			"resultsCount": 2,
+			"results": []map[string]interface{}{
+				{"o": 170.0, "h": 175.0, "l": 168.0, "c": 173.0, "v": 50000000.0, "t": 1712534400000},
+				{"o": 173.0, "h": 178.0, "l": 172.0, "c": 177.0, "v": 48000000.0, "t": 1712620800000},
+			},
+		})
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	from := time.Date(2024, 4, 8, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2024, 4, 9, 0, 0, 0, 0, time.UTC)
+	prices, err := c.FetchDailyBars(context.Background(), "AAPL", from, to)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(prices) != 2 {
+		t.Fatalf("expected 2 bars, got %d", len(prices))
+	}
+	if prices[0].Open != 170.0 {
+		t.Errorf("Open = %v, want 170.0", prices[0].Open)
+	}
+	if prices[1].Close != 177.0 {
+		t.Errorf("Close = %v, want 177.0", prices[1].Close)
+	}
+	if prices[0].Volume != 50000000 {
+		t.Errorf("Volume = %v, want 50000000", prices[0].Volume)
+	}
+}
+
+func TestFetchDailyBars_Empty(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":       "OK",
+			"resultsCount": 0,
+			"results":      []interface{}{},
+		})
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	from := time.Date(2024, 4, 8, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2024, 4, 9, 0, 0, 0, 0, time.UTC)
+	prices, err := c.FetchDailyBars(context.Background(), "AAPL", from, to)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(prices) != 0 {
+		t.Errorf("expected 0 bars, got %d", len(prices))
+	}
+}
 
 func TestFetchDailyOHLCV_Success(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
