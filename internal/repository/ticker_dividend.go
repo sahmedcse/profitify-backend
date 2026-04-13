@@ -51,7 +51,7 @@ func (r *tickerDividendRepo) UpsertBatch(ctx context.Context, dividends []domain
 	}
 
 	br := r.pool.SendBatch(ctx, batch)
-	defer br.Close()
+	defer func() { _ = br.Close() }()
 
 	for range dividends {
 		if _, err := br.Exec(); err != nil {
