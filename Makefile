@@ -1,4 +1,4 @@
-.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down
+.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down build-lambda-enrich-ticker docker-lambda-enrich-ticker-up docker-lambda-enrich-ticker-invoke docker-lambda-enrich-ticker-down
 
 # Docker parameters
 DOCKER_COMPOSE=docker compose
@@ -45,8 +45,12 @@ build-lambda-fetch-technicals:
 build-lambda-fetch-fundamentals:
 	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-fetch-fundamentals/bootstrap ./cmd/lambda-fetch-fundamentals
 
+## build-lambda-enrich-ticker: Build EnrichTicker Lambda (linux/arm64)
+build-lambda-enrich-ticker:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-enrich-ticker/bootstrap ./cmd/lambda-enrich-ticker
+
 ## build-lambdas: Build all Lambda functions (linux/arm64 for Graviton2)
-build-lambdas: build-lambda-fetch-tickers build-lambda-ingest-ohlcv build-lambda-fetch-technicals build-lambda-fetch-fundamentals
+build-lambdas: build-lambda-fetch-tickers build-lambda-ingest-ohlcv build-lambda-fetch-technicals build-lambda-fetch-fundamentals build-lambda-enrich-ticker
 
 ## lint: Run golangci-lint
 lint:
@@ -191,3 +195,15 @@ docker-lambda-fetch-fundamentals-invoke:
 ## docker-lambda-fetch-fundamentals-down: Stop the local FetchFundamentals Lambda container
 docker-lambda-fetch-fundamentals-down:
 	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-fetch-fundamentals
+
+## docker-lambda-enrich-ticker-up: Build and start EnrichTicker Lambda locally (RIE on :9004)
+docker-lambda-enrich-ticker-up:
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-enrich-ticker
+
+## docker-lambda-enrich-ticker-invoke: Invoke the local EnrichTicker Lambda
+docker-lambda-enrich-ticker-invoke:
+	curl -sS -XPOST "http://localhost:9004/2015-03-31/functions/function/invocations" -d '{"ticker":"AAPL","ticker_id":"","date":"2026-04-08"}' && echo
+
+## docker-lambda-enrich-ticker-down: Stop the local EnrichTicker Lambda container
+docker-lambda-enrich-ticker-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-enrich-ticker
