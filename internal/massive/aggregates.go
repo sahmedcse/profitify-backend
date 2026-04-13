@@ -10,6 +10,38 @@ import (
 	"github.com/profitify/profitify-backend/internal/domain"
 )
 
+// FetchDailyBars fetches daily OHLCV bars for a ticker over a date range
+// using the aggregates endpoint.
+func (c *Client) FetchDailyBars(ctx context.Context, ticker string, from, to time.Time) ([]domain.DailyPrice, error) {
+	params := models.ListAggsParams{
+		Ticker:     ticker,
+		Multiplier: 1,
+		Timespan:   "day",
+		From:       models.Millis(from),
+		To:         models.Millis(to),
+	}.WithOrder(models.Asc).WithLimit(50000).WithAdjusted(true)
+
+	iter := c.sdk.ListAggs(ctx, params)
+
+	var prices []domain.DailyPrice
+	for iter.Next() {
+		agg := iter.Item()
+		prices = append(prices, domain.DailyPrice{
+			Time:   time.Time(agg.Timestamp),
+			Open:   agg.Open,
+			High:   agg.High,
+			Low:    agg.Low,
+			Close:  agg.Close,
+			Volume: agg.Volume,
+		})
+	}
+	if iter.Err() != nil {
+		return nil, fmt.Errorf("massive.FetchDailyBars(%s): %w", ticker, iter.Err())
+	}
+
+	return prices, nil
+}
+
 // FetchDailyOHLCV fetches the open, close, afterhours, and pre-market prices
 // for a single ticker on a given date.
 func (c *Client) FetchDailyOHLCV(ctx context.Context, ticker string, date time.Time) (*domain.DailyPrice, error) {

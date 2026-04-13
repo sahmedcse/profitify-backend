@@ -118,5 +118,23 @@ services:
     ports:
       - "9003:8080"
 
+  lambda-compute-stats:
+    build:
+      context: .
+      dockerfile: build/lambda-compute-stats.Dockerfile
+    container_name: profitify-lambda-compute-stats
+    profiles: ["lambda"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      APP_ENV: development
+    ports:
+      - "9005:8080"
+
 volumes:
   profitify-db-data:
