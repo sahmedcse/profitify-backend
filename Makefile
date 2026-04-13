@@ -1,4 +1,4 @@
-.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down
+.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down
 
 # Docker parameters
 DOCKER_COMPOSE=docker compose
@@ -37,8 +37,12 @@ build-lambda-fetch-tickers:
 build-lambda-ingest-ohlcv:
 	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-ingest-ohlcv/bootstrap ./cmd/lambda-ingest-ohlcv
 
+## build-lambda-fetch-technicals: Build FetchTechnicals Lambda (linux/arm64)
+build-lambda-fetch-technicals:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-fetch-technicals/bootstrap ./cmd/lambda-fetch-technicals
+
 ## build-lambdas: Build all Lambda functions (linux/arm64 for Graviton2)
-build-lambdas: build-lambda-fetch-tickers build-lambda-ingest-ohlcv
+build-lambdas: build-lambda-fetch-tickers build-lambda-ingest-ohlcv build-lambda-fetch-technicals
 
 ## lint: Run golangci-lint
 lint:
@@ -151,3 +155,19 @@ docker-lambda-ingest-ohlcv-invoke:
 ## docker-lambda-ingest-ohlcv-down: Stop the local IngestOHLCV Lambda container
 docker-lambda-ingest-ohlcv-down:
 	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-ingest-ohlcv
+
+## docker-lambda-fetch-technicals-up: Build and start FetchTechnicals Lambda locally (RIE on :9002)
+docker-lambda-fetch-technicals-up:
+	@if [ -z "$$MASSIVE_API_KEY" ]; then \
+		echo "ERROR: MASSIVE_API_KEY must be set." >&2; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-fetch-technicals
+
+## docker-lambda-fetch-technicals-invoke: Invoke the local FetchTechnicals Lambda
+docker-lambda-fetch-technicals-invoke:
+	curl -sS -XPOST "http://localhost:9002/2015-03-31/functions/function/invocations" -d '{"ticker":"AAPL","ticker_id":"","date":"2026-04-08"}' && echo
+
+## docker-lambda-fetch-technicals-down: Stop the local FetchTechnicals Lambda container
+docker-lambda-fetch-technicals-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-fetch-technicals

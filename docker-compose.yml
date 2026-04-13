@@ -46,6 +46,24 @@ services:
     ports:
       - "9000:8080"
 
+  lambda-fetch-technicals:
+    build:
+      context: .
+      dockerfile: build/lambda-fetch-technicals.Dockerfile
+    container_name: profitify-lambda-fetch-technicals
+    profiles: ["lambda"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      APP_ENV: development
+    ports:
+      - "9002:8080"
+
   lambda-ingest-ohlcv:
     build:
       context: .
