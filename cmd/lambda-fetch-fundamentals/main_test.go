@@ -72,6 +72,36 @@ func (w *stubSummaryWriter) Upsert(_ context.Context, s *domain.TickerDividendSu
 	return w.err
 }
 
+// stubStageTracker is a no-op tracker for tests.
+type stubStageTracker struct{}
+
+func (s *stubStageTracker) MarkRunning(_ context.Context, _, _, _ string) (string, error) {
+	return "stage-id", nil
+}
+
+func (s *stubStageTracker) MarkCompleted(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+func (s *stubStageTracker) MarkFailed(_ context.Context, _, _, _, _ string) error {
+	return nil
+}
+
+// failingStageTracker always returns errors (verifies tracking failures don't abort work).
+type failingStageTracker struct{}
+
+func (s *failingStageTracker) MarkRunning(_ context.Context, _, _, _ string) (string, error) {
+	return "", fmt.Errorf("tracking unavailable")
+}
+
+func (s *failingStageTracker) MarkCompleted(_ context.Context, _, _, _ string) error {
+	return fmt.Errorf("tracking unavailable")
+}
+
+func (s *failingStageTracker) MarkFailed(_ context.Context, _, _, _, _ string) error {
+	return fmt.Errorf("tracking unavailable")
+}
+
 func TestFetchFundamentals_HappyPath(t *testing.T) {
 	details := &stubDetailsFetcher{
 		fund: &domain.TickerFundamentals{
@@ -91,7 +121,7 @@ func TestFetchFundamentals_HappyPath(t *testing.T) {
 	sumWriter := &stubSummaryWriter{}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := fetchFundamentals(context.Background(), event, details, divFetcher, fundWriter, divWriter, prices, sumWriter, discardLogger)
+	resp, err := fetchFundamentals(context.Background(), event, details, divFetcher, fundWriter, divWriter, prices, sumWriter, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -118,7 +148,7 @@ func TestFetchFundamentals_HappyPath(t *testing.T) {
 
 func TestFetchFundamentals_MissingTickerID(t *testing.T) {
 	event := pipeline.TickerEvent{Ticker: "AAPL", Date: "2026-04-08"}
-	_, err := fetchFundamentals(context.Background(), event, nil, nil, nil, nil, nil, nil, discardLogger)
+	_, err := fetchFundamentals(context.Background(), event, nil, nil, nil, nil, nil, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for missing ticker_id")
 	}
@@ -137,7 +167,7 @@ func TestFetchFundamentals_DetailsError_ContinuesWithDividends(t *testing.T) {
 	sumWriter := &stubSummaryWriter{}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := fetchFundamentals(context.Background(), event, details, divFetcher, fundWriter, divWriter, prices, sumWriter, discardLogger)
+	resp, err := fetchFundamentals(context.Background(), event, details, divFetcher, fundWriter, divWriter, prices, sumWriter, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -158,7 +188,7 @@ func TestFetchFundamentals_DividendFetchError(t *testing.T) {
 	fundWriter := &stubFundamentalsWriter{}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := fetchFundamentals(context.Background(), event, details, divFetcher, fundWriter, nil, nil, nil, discardLogger)
+	resp, err := fetchFundamentals(context.Background(), event, details, divFetcher, fundWriter, nil, nil, nil, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -177,7 +207,7 @@ func TestFetchFundamentals_NoDividends(t *testing.T) {
 	fundWriter := &stubFundamentalsWriter{}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := fetchFundamentals(context.Background(), event, details, divFetcher, fundWriter, nil, nil, nil, discardLogger)
+	resp, err := fetchFundamentals(context.Background(), event, details, divFetcher, fundWriter, nil, nil, nil, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -192,7 +222,7 @@ func TestFetchFundamentals_UpsertFundamentalsError(t *testing.T) {
 	fundWriter := &stubFundamentalsWriter{err: fmt.Errorf("db error")}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	_, err := fetchFundamentals(context.Background(), event, details, nil, fundWriter, nil, nil, nil, discardLogger)
+	_, err := fetchFundamentals(context.Background(), event, details, nil, fundWriter, nil, nil, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for upsert failure")
 	}
@@ -207,9 +237,24 @@ func TestFetchFundamentals_UpsertDividendsError(t *testing.T) {
 	divWriter := &stubDividendWriter{err: fmt.Errorf("db error")}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	_, err := fetchFundamentals(context.Background(), event, details, divFetcher, fundWriter, divWriter, nil, nil, discardLogger)
+	_, err := fetchFundamentals(context.Background(), event, details, divFetcher, fundWriter, divWriter, nil, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for dividend upsert failure")
+	}
+}
+
+func TestFetchFundamentals_TrackingFailure_DoesNotAbort(t *testing.T) {
+	details := &stubDetailsFetcher{fund: &domain.TickerFundamentals{}}
+	divFetcher := &stubDividendFetcher{dividends: nil}
+	fundWriter := &stubFundamentalsWriter{}
+
+	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08", RunID: "run-123"}
+	resp, err := fetchFundamentals(context.Background(), event, details, divFetcher, fundWriter, nil, nil, nil, &failingStageTracker{}, discardLogger)
+	if err != nil {
+		t.Fatalf("tracking failure should not abort work: %v", err)
+	}
+	if resp.Ticker != "AAPL" {
+		t.Errorf("Ticker = %q, want AAPL", resp.Ticker)
 	}
 }
 

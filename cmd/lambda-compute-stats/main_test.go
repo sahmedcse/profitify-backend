@@ -46,6 +46,36 @@ func (w *stubStatsWriter) Upsert(_ context.Context, s *domain.TickerStats) error
 	return w.err
 }
 
+// stubStageTracker is a no-op tracker for tests.
+type stubStageTracker struct{}
+
+func (s *stubStageTracker) MarkRunning(_ context.Context, _, _, _ string) (string, error) {
+	return "stage-id", nil
+}
+
+func (s *stubStageTracker) MarkCompleted(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+func (s *stubStageTracker) MarkFailed(_ context.Context, _, _, _, _ string) error {
+	return nil
+}
+
+// failingStageTracker always returns errors (verifies tracking failures don't abort work).
+type failingStageTracker struct{}
+
+func (s *failingStageTracker) MarkRunning(_ context.Context, _, _, _ string) (string, error) {
+	return "", fmt.Errorf("tracking unavailable")
+}
+
+func (s *failingStageTracker) MarkCompleted(_ context.Context, _, _, _ string) error {
+	return fmt.Errorf("tracking unavailable")
+}
+
+func (s *failingStageTracker) MarkFailed(_ context.Context, _, _, _, _ string) error {
+	return fmt.Errorf("tracking unavailable")
+}
+
 func makePrices(n int) []domain.DailyPrice {
 	prices := make([]domain.DailyPrice, n)
 	for i := range prices {
@@ -73,7 +103,7 @@ func TestComputeStats_HappyPath(t *testing.T) {
 	writer := &stubStatsWriter{}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := computeStats(context.Background(), event, &stubBarFetcher{prices: prices}, techReader, writer, discardLogger)
+	resp, err := computeStats(context.Background(), event, &stubBarFetcher{prices: prices}, techReader, writer, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -103,7 +133,7 @@ func TestComputeStats_HappyPath(t *testing.T) {
 
 func TestComputeStats_MissingTickerID(t *testing.T) {
 	event := pipeline.TickerEvent{Ticker: "AAPL", Date: "2026-04-08"}
-	_, err := computeStats(context.Background(), event, nil, nil, nil, discardLogger)
+	_, err := computeStats(context.Background(), event, nil, nil, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for missing ticker_id")
 	}
@@ -112,7 +142,7 @@ func TestComputeStats_MissingTickerID(t *testing.T) {
 func TestComputeStats_InsufficientData(t *testing.T) {
 	prices := makePrices(1) // only 1 bar
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	_, err := computeStats(context.Background(), event, &stubBarFetcher{prices: prices}, nil, nil, discardLogger)
+	_, err := computeStats(context.Background(), event, &stubBarFetcher{prices: prices}, nil, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for insufficient data")
 	}
@@ -120,7 +150,7 @@ func TestComputeStats_InsufficientData(t *testing.T) {
 
 func TestComputeStats_PriceReadError(t *testing.T) {
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	_, err := computeStats(context.Background(), event, &stubBarFetcher{err: fmt.Errorf("db error")}, nil, nil, discardLogger)
+	_, err := computeStats(context.Background(), event, &stubBarFetcher{err: fmt.Errorf("db error")}, nil, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for price read failure")
 	}
@@ -132,7 +162,7 @@ func TestComputeStats_NoTechnicals(t *testing.T) {
 	writer := &stubStatsWriter{}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := computeStats(context.Background(), event, &stubBarFetcher{prices: prices}, techReader, writer, discardLogger)
+	resp, err := computeStats(context.Background(), event, &stubBarFetcher{prices: prices}, techReader, writer, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,7 +179,7 @@ func TestComputeStats_UpsertError(t *testing.T) {
 	writer := &stubStatsWriter{err: fmt.Errorf("db error")}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	_, err := computeStats(context.Background(), event, &stubBarFetcher{prices: prices}, techReader, writer, discardLogger)
+	_, err := computeStats(context.Background(), event, &stubBarFetcher{prices: prices}, techReader, writer, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for upsert failure")
 	}
@@ -161,13 +191,28 @@ func TestComputeStats_MinimalData(t *testing.T) {
 	writer := &stubStatsWriter{}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := computeStats(context.Background(), event, &stubBarFetcher{prices: prices}, techReader, writer, discardLogger)
+	resp, err := computeStats(context.Background(), event, &stubBarFetcher{prices: prices}, techReader, writer, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if writer.upserted.PriceReturn7d != nil {
 		t.Error("expected nil PriceReturn7d for 2 bars (< 7)")
+	}
+	if resp.Ticker != "AAPL" {
+		t.Errorf("Ticker = %q, want AAPL", resp.Ticker)
+	}
+}
+
+func TestComputeStats_TrackingFailure_DoesNotAbort(t *testing.T) {
+	prices := makePrices(5)
+	techReader := &stubTechnicalsReader{tech: &domain.TechnicalIndicators{}}
+	writer := &stubStatsWriter{}
+
+	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08", RunID: "run-123"}
+	resp, err := computeStats(context.Background(), event, &stubBarFetcher{prices: prices}, techReader, writer, &failingStageTracker{}, discardLogger)
+	if err != nil {
+		t.Fatalf("tracking failure should not abort work: %v", err)
 	}
 	if resp.Ticker != "AAPL" {
 		t.Errorf("Ticker = %q, want AAPL", resp.Ticker)

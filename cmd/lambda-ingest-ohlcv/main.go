@@ -17,6 +17,13 @@ import (
 	"github.com/profitify/profitify-backend/internal/repository"
 )
 
+// stageTracker abstracts pipeline stage tracking for testing.
+type stageTracker interface {
+	MarkRunning(ctx context.Context, runID, tickerID, stage string) (string, error)
+	MarkCompleted(ctx context.Context, runID, tickerID, stage string) error
+	MarkFailed(ctx context.Context, runID, tickerID, stage, errorMessage string) error
+}
+
 // ohlcvFetcher abstracts the Massive client for testing.
 type ohlcvFetcher interface {
 	FetchDailyOHLCV(ctx context.Context, ticker string, date time.Time) (*domain.DailyPrice, error)
@@ -35,7 +42,7 @@ type Response struct {
 }
 
 // ingestOHLCV is the core logic: fetch OHLCV then upsert to DB.
-func ingestOHLCV(ctx context.Context, event pipeline.TickerEvent, fetcher ohlcvFetcher, writer priceWriter, logger *slog.Logger) (*Response, error) {
+func ingestOHLCV(ctx context.Context, event pipeline.TickerEvent, fetcher ohlcvFetcher, writer priceWriter, tracker stageTracker, logger *slog.Logger) (_ *Response, retErr error) {
 	if event.TickerID == "" {
 		return nil, fmt.Errorf("ticker_id is required")
 	}
@@ -47,6 +54,10 @@ func ingestOHLCV(ctx context.Context, event pipeline.TickerEvent, fetcher ohlcvF
 	if err != nil {
 		return nil, fmt.Errorf("parsing date %q: %w", event.Date, err)
 	}
+
+	st := pipeline.NewStageTracker(tracker, event.RunID, event.TickerID, domain.StageIngestOHLCV, logger)
+	_ = st.Begin(ctx)
+	defer func() { st.End(ctx, retErr) }()
 
 	logger.Info("fetching OHLCV", "ticker", event.Ticker, "date", event.Date)
 	price, err := fetcher.FetchDailyOHLCV(ctx, event.Ticker, date)
@@ -86,7 +97,9 @@ func handleRequest(ctx context.Context, event pipeline.TickerEvent) (*Response, 
 	client := massive.NewClient(cfg.MassiveAPIKey, logger)
 	repo := repository.NewDailyPriceRepo(pool, logger)
 
-	return ingestOHLCV(ctx, event, client, repo, logger)
+	stageRepo := repository.NewPipelineTickerStageRepo(pool, logger)
+
+	return ingestOHLCV(ctx, event, client, repo, stageRepo, logger)
 }
 
 func main() {
