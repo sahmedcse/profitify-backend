@@ -51,3 +51,21 @@ type TickerStatsRepository interface {
 	Upsert(ctx context.Context, stats *domain.TickerStats) error
 	GetLatest(ctx context.Context, tickerID string) (*domain.TickerStats, error)
 }
+
+// PipelineRunRepository persists and retrieves pipeline run records.
+type PipelineRunRepository interface {
+	Create(ctx context.Context, run *domain.PipelineRun) (*domain.PipelineRun, error)
+	GetByID(ctx context.Context, id string) (*domain.PipelineRun, error)
+	UpdateStatus(ctx context.Context, id string, status string, errorMessage string) error
+	UpdateCounts(ctx context.Context, id string) error
+	MarkCompleted(ctx context.Context, id string) error
+}
+
+// PipelineTickerStageRepository persists and retrieves per-ticker stage records.
+type PipelineTickerStageRepository interface {
+	BulkInsert(ctx context.Context, stages []domain.PipelineTickerStage) error
+	MarkRunning(ctx context.Context, runID, tickerID, stage string) (string, error)
+	MarkCompleted(ctx context.Context, runID, tickerID, stage string) error
+	MarkFailed(ctx context.Context, runID, tickerID, stage, errorMessage string) error
+	GetByRunAndTicker(ctx context.Context, runID, tickerID string) ([]domain.PipelineTickerStage, error)
+}

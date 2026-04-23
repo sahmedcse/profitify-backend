@@ -35,6 +35,13 @@ type statsWriter interface {
 	Upsert(ctx context.Context, stats *domain.TickerStats) error
 }
 
+// stageTracker abstracts pipeline stage tracking for testing.
+type stageTracker interface {
+	MarkRunning(ctx context.Context, runID, tickerID, stage string) (string, error)
+	MarkCompleted(ctx context.Context, runID, tickerID, stage string) error
+	MarkFailed(ctx context.Context, runID, tickerID, stage, errorMessage string) error
+}
+
 // Response is the output payload for the ComputeStats Lambda.
 type Response struct {
 	Ticker         string `json:"ticker"`
@@ -50,8 +57,9 @@ func computeStats(
 	bars barFetcher,
 	technicals technicalsReader,
 	writer statsWriter,
+	tracker stageTracker,
 	logger *slog.Logger,
-) (*Response, error) {
+) (_ *Response, retErr error) {
 	if event.TickerID == "" {
 		return nil, fmt.Errorf("ticker_id is required")
 	}
@@ -60,6 +68,10 @@ func computeStats(
 	if err != nil {
 		return nil, fmt.Errorf("parsing date %q: %w", event.Date, err)
 	}
+
+	st := pipeline.NewStageTracker(tracker, event.RunID, event.TickerID, domain.StageComputeStats, logger)
+	_ = st.Begin(ctx)
+	defer func() { st.End(ctx, retErr) }()
 
 	// 1. Fetch OHLCV history from Massive (365 days for 52-week)
 	from := date.AddDate(-1, 0, 0)
@@ -197,8 +209,9 @@ func handleRequest(ctx context.Context, event pipeline.TickerEvent) (*Response, 
 	client := massive.NewClient(cfg.MassiveAPIKey, logger)
 	techRepo := repository.NewTickerTechnicalsRepo(pool, logger)
 	statsRepo := repository.NewTickerStatsRepo(pool, logger)
+	stageRepo := repository.NewPipelineTickerStageRepo(pool, logger)
 
-	return computeStats(ctx, event, client, techRepo, statsRepo, logger)
+	return computeStats(ctx, event, client, techRepo, statsRepo, stageRepo, logger)
 }
 
 func main() {

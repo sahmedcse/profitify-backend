@@ -39,6 +39,36 @@ func (w *stubPriceWriter) Upsert(_ context.Context, price *domain.DailyPrice) er
 	return w.err
 }
 
+// stubStageTracker is a no-op tracker for tests.
+type stubStageTracker struct{}
+
+func (s *stubStageTracker) MarkRunning(_ context.Context, _, _, _ string) (string, error) {
+	return "stage-id", nil
+}
+
+func (s *stubStageTracker) MarkCompleted(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+func (s *stubStageTracker) MarkFailed(_ context.Context, _, _, _, _ string) error {
+	return nil
+}
+
+// failingStageTracker always returns errors (verifies tracking failures don't abort work).
+type failingStageTracker struct{}
+
+func (s *failingStageTracker) MarkRunning(_ context.Context, _, _, _ string) (string, error) {
+	return "", fmt.Errorf("tracking unavailable")
+}
+
+func (s *failingStageTracker) MarkCompleted(_ context.Context, _, _, _ string) error {
+	return fmt.Errorf("tracking unavailable")
+}
+
+func (s *failingStageTracker) MarkFailed(_ context.Context, _, _, _, _ string) error {
+	return fmt.Errorf("tracking unavailable")
+}
+
 func TestIngestOHLCV_HappyPath(t *testing.T) {
 	fetcher := &stubOHLCVFetcher{
 		price: &domain.DailyPrice{
@@ -54,7 +84,7 @@ func TestIngestOHLCV_HappyPath(t *testing.T) {
 		Date:     "2026-04-08",
 	}
 
-	resp, err := ingestOHLCV(context.Background(), event, fetcher, writer, discardLogger)
+	resp, err := ingestOHLCV(context.Background(), event, fetcher, writer, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -75,7 +105,7 @@ func TestIngestOHLCV_HappyPath(t *testing.T) {
 
 func TestIngestOHLCV_MissingTickerID(t *testing.T) {
 	event := pipeline.TickerEvent{Ticker: "AAPL", Date: "2026-04-08"}
-	_, err := ingestOHLCV(context.Background(), event, nil, nil, discardLogger)
+	_, err := ingestOHLCV(context.Background(), event, nil, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for missing ticker_id")
 	}
@@ -83,7 +113,7 @@ func TestIngestOHLCV_MissingTickerID(t *testing.T) {
 
 func TestIngestOHLCV_MissingTicker(t *testing.T) {
 	event := pipeline.TickerEvent{TickerID: "uuid-123", Date: "2026-04-08"}
-	_, err := ingestOHLCV(context.Background(), event, nil, nil, discardLogger)
+	_, err := ingestOHLCV(context.Background(), event, nil, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for missing ticker")
 	}
@@ -91,7 +121,7 @@ func TestIngestOHLCV_MissingTicker(t *testing.T) {
 
 func TestIngestOHLCV_InvalidDate(t *testing.T) {
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "not-a-date"}
-	_, err := ingestOHLCV(context.Background(), event, nil, nil, discardLogger)
+	_, err := ingestOHLCV(context.Background(), event, nil, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for invalid date")
 	}
@@ -101,7 +131,7 @@ func TestIngestOHLCV_FetchError(t *testing.T) {
 	fetcher := &stubOHLCVFetcher{err: fmt.Errorf("api timeout")}
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
 
-	_, err := ingestOHLCV(context.Background(), event, fetcher, nil, discardLogger)
+	_, err := ingestOHLCV(context.Background(), event, fetcher, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for fetch failure")
 	}
@@ -114,9 +144,25 @@ func TestIngestOHLCV_UpsertError(t *testing.T) {
 	writer := &stubPriceWriter{err: fmt.Errorf("db connection error")}
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
 
-	_, err := ingestOHLCV(context.Background(), event, fetcher, writer, discardLogger)
+	_, err := ingestOHLCV(context.Background(), event, fetcher, writer, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for upsert failure")
+	}
+}
+
+func TestIngestOHLCV_TrackingFailure_DoesNotAbort(t *testing.T) {
+	fetcher := &stubOHLCVFetcher{
+		price: &domain.DailyPrice{Close: 100},
+	}
+	writer := &stubPriceWriter{}
+	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08", RunID: "run-123"}
+
+	resp, err := ingestOHLCV(context.Background(), event, fetcher, writer, &failingStageTracker{}, discardLogger)
+	if err != nil {
+		t.Fatalf("tracking failure should not abort work: %v", err)
+	}
+	if resp.Status != "ok" {
+		t.Errorf("Status = %q, want ok", resp.Status)
 	}
 }
 
@@ -181,7 +227,7 @@ func TestIngestOHLCV_Integration(t *testing.T) {
 	repo := repository.NewDailyPriceRepo(pool, discardLogger)
 	event := pipeline.TickerEvent{Ticker: "INGEST_TEST", TickerID: tickerID, Date: "2026-04-08"}
 
-	resp, err := ingestOHLCV(ctx, event, fetcher, repo, discardLogger)
+	resp, err := ingestOHLCV(ctx, event, fetcher, repo, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("ingestOHLCV: %v", err)
 	}

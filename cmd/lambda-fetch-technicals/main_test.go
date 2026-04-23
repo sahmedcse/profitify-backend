@@ -46,6 +46,36 @@ func (w *stubTechnicalsWriter) Upsert(_ context.Context, tech *domain.TechnicalI
 	return w.err
 }
 
+// stubStageTracker is a no-op tracker for tests.
+type stubStageTracker struct{}
+
+func (s *stubStageTracker) MarkRunning(_ context.Context, _, _, _ string) (string, error) {
+	return "stage-id", nil
+}
+
+func (s *stubStageTracker) MarkCompleted(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+func (s *stubStageTracker) MarkFailed(_ context.Context, _, _, _, _ string) error {
+	return nil
+}
+
+// failingStageTracker always returns errors (verifies tracking failures don't abort work).
+type failingStageTracker struct{}
+
+func (s *failingStageTracker) MarkRunning(_ context.Context, _, _, _ string) (string, error) {
+	return "", fmt.Errorf("tracking unavailable")
+}
+
+func (s *failingStageTracker) MarkCompleted(_ context.Context, _, _, _ string) error {
+	return fmt.Errorf("tracking unavailable")
+}
+
+func (s *failingStageTracker) MarkFailed(_ context.Context, _, _, _, _ string) error {
+	return fmt.Errorf("tracking unavailable")
+}
+
 func TestFetchTechnicals_HappyPath(t *testing.T) {
 	fetcher := &stubIndicatorFetcher{
 		tech: &domain.TechnicalIndicators{
@@ -67,7 +97,7 @@ func TestFetchTechnicals_HappyPath(t *testing.T) {
 	writer := &stubTechnicalsWriter{}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := fetchTechnicals(context.Background(), event, fetcher, reader, writer, discardLogger)
+	resp, err := fetchTechnicals(context.Background(), event, fetcher, reader, writer, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -103,7 +133,7 @@ func TestFetchTechnicals_NoOHLCVHistory(t *testing.T) {
 	writer := &stubTechnicalsWriter{}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := fetchTechnicals(context.Background(), event, fetcher, reader, writer, discardLogger)
+	resp, err := fetchTechnicals(context.Background(), event, fetcher, reader, writer, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -115,7 +145,7 @@ func TestFetchTechnicals_NoOHLCVHistory(t *testing.T) {
 
 func TestFetchTechnicals_MissingTickerID(t *testing.T) {
 	event := pipeline.TickerEvent{Ticker: "AAPL", Date: "2026-04-08"}
-	_, err := fetchTechnicals(context.Background(), event, nil, nil, nil, discardLogger)
+	_, err := fetchTechnicals(context.Background(), event, nil, nil, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for missing ticker_id")
 	}
@@ -125,7 +155,7 @@ func TestFetchTechnicals_FetchError(t *testing.T) {
 	fetcher := &stubIndicatorFetcher{err: fmt.Errorf("api error")}
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
 
-	_, err := fetchTechnicals(context.Background(), event, fetcher, nil, nil, discardLogger)
+	_, err := fetchTechnicals(context.Background(), event, fetcher, nil, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for fetch failure")
 	}
@@ -137,9 +167,26 @@ func TestFetchTechnicals_UpsertError(t *testing.T) {
 	writer := &stubTechnicalsWriter{err: fmt.Errorf("db error")}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	_, err := fetchTechnicals(context.Background(), event, fetcher, reader, writer, discardLogger)
+	_, err := fetchTechnicals(context.Background(), event, fetcher, reader, writer, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for upsert failure")
+	}
+}
+
+func TestFetchTechnicals_TrackingFailure_DoesNotAbort(t *testing.T) {
+	fetcher := &stubIndicatorFetcher{
+		tech: &domain.TechnicalIndicators{SMA20: ptr(175.0)},
+	}
+	reader := &stubPriceReader{}
+	writer := &stubTechnicalsWriter{}
+
+	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08", RunID: "run-123"}
+	resp, err := fetchTechnicals(context.Background(), event, fetcher, reader, writer, &failingStageTracker{}, discardLogger)
+	if err != nil {
+		t.Fatalf("tracking failure should not abort work: %v", err)
+	}
+	if resp.Ticker != "AAPL" {
+		t.Errorf("Ticker = %q, want AAPL", resp.Ticker)
 	}
 }
 

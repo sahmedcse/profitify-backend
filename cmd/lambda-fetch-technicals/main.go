@@ -33,16 +33,23 @@ type technicalsWriter interface {
 	Upsert(ctx context.Context, tech *domain.TechnicalIndicators) error
 }
 
+// stageTracker abstracts pipeline stage tracking for testing.
+type stageTracker interface {
+	MarkRunning(ctx context.Context, runID, tickerID, stage string) (string, error)
+	MarkCompleted(ctx context.Context, runID, tickerID, stage string) error
+	MarkFailed(ctx context.Context, runID, tickerID, stage, errorMessage string) error
+}
+
 // Response is the output payload for the FetchTechnicals Lambda.
 type Response struct {
-	Ticker          string `json:"ticker"`
-	Date            string `json:"date"`
-	IndicatorsFetched int  `json:"indicators_fetched"`
-	SelfComputed      int  `json:"self_computed"`
+	Ticker            string `json:"ticker"`
+	Date              string `json:"date"`
+	IndicatorsFetched int    `json:"indicators_fetched"`
+	SelfComputed      int    `json:"self_computed"`
 }
 
 // fetchTechnicals is the core logic.
-func fetchTechnicals(ctx context.Context, event pipeline.TickerEvent, fetcher indicatorFetcher, prices priceReader, writer technicalsWriter, logger *slog.Logger) (*Response, error) {
+func fetchTechnicals(ctx context.Context, event pipeline.TickerEvent, fetcher indicatorFetcher, prices priceReader, writer technicalsWriter, tracker stageTracker, logger *slog.Logger) (_ *Response, retErr error) {
 	if event.TickerID == "" {
 		return nil, fmt.Errorf("ticker_id is required")
 	}
@@ -51,6 +58,10 @@ func fetchTechnicals(ctx context.Context, event pipeline.TickerEvent, fetcher in
 	if err != nil {
 		return nil, fmt.Errorf("parsing date %q: %w", event.Date, err)
 	}
+
+	st := pipeline.NewStageTracker(tracker, event.RunID, event.TickerID, domain.StageFetchTechnicals, logger)
+	_ = st.Begin(ctx)
+	defer func() { st.End(ctx, retErr) }()
 
 	// 1. Fetch Massive indicators
 	logger.Info("fetching indicators from Massive", "ticker", event.Ticker, "date", event.Date)
@@ -153,8 +164,9 @@ func handleRequest(ctx context.Context, event pipeline.TickerEvent) (*Response, 
 	client := massive.NewClient(cfg.MassiveAPIKey, logger)
 	priceRepo := repository.NewDailyPriceRepo(pool, logger)
 	techRepo := repository.NewTickerTechnicalsRepo(pool, logger)
+	stageRepo := repository.NewPipelineTickerStageRepo(pool, logger)
 
-	return fetchTechnicals(ctx, event, client, priceRepo, techRepo, logger)
+	return fetchTechnicals(ctx, event, client, priceRepo, techRepo, stageRepo, logger)
 }
 
 func main() {

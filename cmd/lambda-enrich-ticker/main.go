@@ -42,6 +42,13 @@ type statusUpdater interface {
 	UpdateIndicatorStatuses(ctx context.Context, tickerID string, t time.Time, statuses map[string]string) error
 }
 
+// stageTracker abstracts pipeline stage tracking for testing.
+type stageTracker interface {
+	MarkRunning(ctx context.Context, runID, tickerID, stage string) (string, error)
+	MarkCompleted(ctx context.Context, runID, tickerID, stage string) error
+	MarkFailed(ctx context.Context, runID, tickerID, stage, errorMessage string) error
+}
+
 // Response is the output payload for the EnrichTicker Lambda.
 type Response struct {
 	Ticker               string `json:"ticker"`
@@ -59,8 +66,9 @@ func enrichTicker(
 	prices priceReader,
 	sectors sectorUpdater,
 	statuses statusUpdater,
+	tracker stageTracker,
 	logger *slog.Logger,
-) (*Response, error) {
+) (_ *Response, retErr error) {
 	if event.TickerID == "" {
 		return nil, fmt.Errorf("ticker_id is required")
 	}
@@ -69,6 +77,10 @@ func enrichTicker(
 	if err != nil {
 		return nil, fmt.Errorf("parsing date %q: %w", event.Date, err)
 	}
+
+	st := pipeline.NewStageTracker(tracker, event.RunID, event.TickerID, domain.StageEnrichTicker, logger)
+	_ = st.Begin(ctx)
+	defer func() { st.End(ctx, retErr) }()
 
 	resp := &Response{Ticker: event.Ticker, Date: event.Date}
 
@@ -133,8 +145,9 @@ func handleRequest(ctx context.Context, event pipeline.TickerEvent) (*Response, 
 	techRepo := repository.NewTickerTechnicalsRepo(pool, logger)
 	priceRepo := repository.NewDailyPriceRepo(pool, logger)
 	tickerRepo := repository.NewTickerRepo(pool, logger)
+	stageRepo := repository.NewPipelineTickerStageRepo(pool, logger)
 
-	return enrichTicker(ctx, event, fundRepo, techRepo, priceRepo, tickerRepo, techRepo, logger)
+	return enrichTicker(ctx, event, fundRepo, techRepo, priceRepo, tickerRepo, techRepo, stageRepo, logger)
 }
 
 func main() {

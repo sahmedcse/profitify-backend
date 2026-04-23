@@ -69,6 +69,36 @@ func (u *stubStatusUpdater) UpdateIndicatorStatuses(_ context.Context, tickerID 
 	return u.err
 }
 
+// stubStageTracker is a no-op tracker for tests.
+type stubStageTracker struct{}
+
+func (s *stubStageTracker) MarkRunning(_ context.Context, _, _, _ string) (string, error) {
+	return "stage-id", nil
+}
+
+func (s *stubStageTracker) MarkCompleted(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+func (s *stubStageTracker) MarkFailed(_ context.Context, _, _, _, _ string) error {
+	return nil
+}
+
+// failingStageTracker always returns errors (verifies tracking failures don't abort work).
+type failingStageTracker struct{}
+
+func (s *failingStageTracker) MarkRunning(_ context.Context, _, _, _ string) (string, error) {
+	return "", fmt.Errorf("tracking unavailable")
+}
+
+func (s *failingStageTracker) MarkCompleted(_ context.Context, _, _, _ string) error {
+	return fmt.Errorf("tracking unavailable")
+}
+
+func (s *failingStageTracker) MarkFailed(_ context.Context, _, _, _, _ string) error {
+	return fmt.Errorf("tracking unavailable")
+}
+
 func TestEnrichTicker_HappyPath(t *testing.T) {
 	fundReader := &stubFundamentalsReader{
 		fund: &domain.TickerFundamentals{SICCode: "3571"}, // Electronic Computers → Technology
@@ -86,7 +116,7 @@ func TestEnrichTicker_HappyPath(t *testing.T) {
 	statusUpd := &stubStatusUpdater{}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := enrichTicker(context.Background(), event, fundReader, techReader, priceReader, sectorUpd, statusUpd, discardLogger)
+	resp, err := enrichTicker(context.Background(), event, fundReader, techReader, priceReader, sectorUpd, statusUpd, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -113,7 +143,7 @@ func TestEnrichTicker_HappyPath(t *testing.T) {
 
 func TestEnrichTicker_MissingTickerID(t *testing.T) {
 	event := pipeline.TickerEvent{Ticker: "AAPL", Date: "2026-04-08"}
-	_, err := enrichTicker(context.Background(), event, nil, nil, nil, nil, nil, discardLogger)
+	_, err := enrichTicker(context.Background(), event, nil, nil, nil, nil, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for missing ticker_id")
 	}
@@ -128,7 +158,7 @@ func TestEnrichTicker_NoFundamentals(t *testing.T) {
 	statusUpd := &stubStatusUpdater{}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := enrichTicker(context.Background(), event, fundReader, techReader, priceReader, nil, statusUpd, discardLogger)
+	resp, err := enrichTicker(context.Background(), event, fundReader, techReader, priceReader, nil, statusUpd, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,7 +179,7 @@ func TestEnrichTicker_NoTechnicals(t *testing.T) {
 	sectorUpd := &stubSectorUpdater{}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := enrichTicker(context.Background(), event, fundReader, techReader, nil, sectorUpd, nil, discardLogger)
+	resp, err := enrichTicker(context.Background(), event, fundReader, techReader, nil, sectorUpd, nil, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +200,7 @@ func TestEnrichTicker_NoDailyPrice(t *testing.T) {
 	priceReader := &stubPriceReader{err: fmt.Errorf("not found")}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	resp, err := enrichTicker(context.Background(), event, fundReader, techReader, priceReader, nil, nil, discardLogger)
+	resp, err := enrichTicker(context.Background(), event, fundReader, techReader, priceReader, nil, nil, &stubStageTracker{}, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -187,7 +217,7 @@ func TestEnrichTicker_SectorUpdateError(t *testing.T) {
 	sectorUpd := &stubSectorUpdater{err: fmt.Errorf("db error")}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	_, err := enrichTicker(context.Background(), event, fundReader, nil, nil, sectorUpd, nil, discardLogger)
+	_, err := enrichTicker(context.Background(), event, fundReader, nil, nil, sectorUpd, nil, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for sector update failure")
 	}
@@ -202,9 +232,23 @@ func TestEnrichTicker_StatusUpdateError(t *testing.T) {
 	statusUpd := &stubStatusUpdater{err: fmt.Errorf("db error")}
 
 	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
-	_, err := enrichTicker(context.Background(), event, fundReader, techReader, priceReader, nil, statusUpd, discardLogger)
+	_, err := enrichTicker(context.Background(), event, fundReader, techReader, priceReader, nil, statusUpd, &stubStageTracker{}, discardLogger)
 	if err == nil {
 		t.Fatal("expected error for status update failure")
+	}
+}
+
+func TestEnrichTicker_TrackingFailure_DoesNotAbort(t *testing.T) {
+	fundReader := &stubFundamentalsReader{fund: &domain.TickerFundamentals{}}
+	techReader := &stubTechnicalsReader{err: fmt.Errorf("not found")}
+
+	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08", RunID: "run-123"}
+	resp, err := enrichTicker(context.Background(), event, fundReader, techReader, nil, nil, nil, &failingStageTracker{}, discardLogger)
+	if err != nil {
+		t.Fatalf("tracking failure should not abort work: %v", err)
+	}
+	if resp.Ticker != "AAPL" {
+		t.Errorf("Ticker = %q, want AAPL", resp.Ticker)
 	}
 }
 

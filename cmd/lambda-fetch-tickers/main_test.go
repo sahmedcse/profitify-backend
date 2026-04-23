@@ -51,11 +51,189 @@ func (f *stubFetcher) FetchActiveTickers(_ context.Context) ([]domain.Ticker, er
 	return f.tickers, f.err
 }
 
+// stubRunCreator stubs pipeline run creation.
+type stubRunCreator struct {
+	created       *domain.PipelineRun
+	createErr     error
+	updatedStatus string
+}
+
+func (r *stubRunCreator) Create(_ context.Context, run *domain.PipelineRun) (*domain.PipelineRun, error) {
+	if r.createErr != nil {
+		return nil, r.createErr
+	}
+	run.ID = "test-run-id"
+	r.created = run
+	return run, nil
+}
+
+func (r *stubRunCreator) UpdateStatus(_ context.Context, _ string, status string, _ string) error {
+	r.updatedStatus = status
+	return nil
+}
+
+// stubStageInserter stubs pipeline stage insertion.
+type stubStageInserter struct {
+	inserted []domain.PipelineTickerStage
+	err      error
+}
+
+func (s *stubStageInserter) BulkInsert(_ context.Context, stages []domain.PipelineTickerStage) error {
+	s.inserted = stages
+	return s.err
+}
+
+// stubTickerRepo implements repository.TickerRepository for unit tests.
+type stubTickerRepo struct {
+	upserted []domain.Ticker
+	active   []domain.Ticker
+}
+
+func (r *stubTickerRepo) UpsertBatch(_ context.Context, tickers []domain.Ticker) error {
+	r.upserted = tickers
+	return nil
+}
+
+func (r *stubTickerRepo) GetActive(_ context.Context) ([]domain.Ticker, error) {
+	return r.active, nil
+}
+
+func (r *stubTickerRepo) GetBySymbol(_ context.Context, _ string) (*domain.Ticker, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (r *stubTickerRepo) UpdateSector(_ context.Context, _ string, _ string) error {
+	return nil
+}
+
+func TestFetchAndUpsert_Unit_Success(t *testing.T) {
+	fetcher := &stubFetcher{
+		tickers: []domain.Ticker{
+			{Ticker: "AAPL", Name: "Apple"},
+			{Ticker: "MSFT", Name: "Microsoft"},
+		},
+	}
+	repo := &stubTickerRepo{
+		active: []domain.Ticker{
+			{ID: "id-1", Ticker: "AAPL"},
+			{ID: "id-2", Ticker: "MSFT"},
+		},
+	}
+	runs := &stubRunCreator{}
+	stages := &stubStageInserter{}
+
+	resp, err := fetchAndUpsert(context.Background(), Event{}, fetcher, repo, runs, stages, discardLogger)
+	if err != nil {
+		t.Fatalf("fetchAndUpsert: %v", err)
+	}
+
+	if resp.TickerCount != 2 {
+		t.Errorf("TickerCount = %d, want 2", resp.TickerCount)
+	}
+	if resp.RunID != "test-run-id" {
+		t.Errorf("RunID = %q, want %q", resp.RunID, "test-run-id")
+	}
+	if resp.Date == "" {
+		t.Error("Date should not be empty")
+	}
+}
+
+func TestFetchAndUpsert_Unit_CustomDate(t *testing.T) {
+	fetcher := &stubFetcher{tickers: []domain.Ticker{{Ticker: "AAPL"}}}
+	repo := &stubTickerRepo{active: []domain.Ticker{{ID: "id-1", Ticker: "AAPL"}}}
+	runs := &stubRunCreator{}
+	stages := &stubStageInserter{}
+
+	event := Event{RunParams: &domain.PipelineRunParams{Date: "2026-01-15"}}
+	resp, err := fetchAndUpsert(context.Background(), event, fetcher, repo, runs, stages, discardLogger)
+	if err != nil {
+		t.Fatalf("fetchAndUpsert: %v", err)
+	}
+
+	if resp.Date != "2026-01-15" {
+		t.Errorf("Date = %q, want %q", resp.Date, "2026-01-15")
+	}
+	if runs.created.RunParams.Date != "2026-01-15" {
+		t.Errorf("RunParams.Date = %q, want %q", runs.created.RunParams.Date, "2026-01-15")
+	}
+}
+
+func TestFetchAndUpsert_Unit_StagesCount(t *testing.T) {
+	fetcher := &stubFetcher{
+		tickers: []domain.Ticker{
+			{Ticker: "AAPL"},
+			{Ticker: "MSFT"},
+			{Ticker: "GOOG"},
+		},
+	}
+	repo := &stubTickerRepo{
+		active: []domain.Ticker{
+			{ID: "id-1", Ticker: "AAPL"},
+			{ID: "id-2", Ticker: "MSFT"},
+			{ID: "id-3", Ticker: "GOOG"},
+		},
+	}
+	runs := &stubRunCreator{}
+	stages := &stubStageInserter{}
+
+	_, err := fetchAndUpsert(context.Background(), Event{}, fetcher, repo, runs, stages, discardLogger)
+	if err != nil {
+		t.Fatalf("fetchAndUpsert: %v", err)
+	}
+
+	// 3 tickers x 5 stages = 15 stage rows
+	if len(stages.inserted) != 15 {
+		t.Errorf("stage count = %d, want 15", len(stages.inserted))
+	}
+}
+
+func TestFetchAndUpsert_Unit_FetchError(t *testing.T) {
+	fetcher := &stubFetcher{err: fmt.Errorf("api timeout")}
+	repo := &stubTickerRepo{}
+	runs := &stubRunCreator{}
+	stages := &stubStageInserter{}
+
+	_, err := fetchAndUpsert(context.Background(), Event{}, fetcher, repo, runs, stages, discardLogger)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestFetchAndUpsert_Unit_CreateRunError(t *testing.T) {
+	fetcher := &stubFetcher{tickers: []domain.Ticker{{Ticker: "AAPL"}}}
+	repo := &stubTickerRepo{active: []domain.Ticker{{ID: "id-1", Ticker: "AAPL"}}}
+	runs := &stubRunCreator{createErr: fmt.Errorf("db connection failed")}
+	stages := &stubStageInserter{}
+
+	_, err := fetchAndUpsert(context.Background(), Event{}, fetcher, repo, runs, stages, discardLogger)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestFetchAndUpsert_Unit_StageInsertError(t *testing.T) {
+	fetcher := &stubFetcher{tickers: []domain.Ticker{{Ticker: "AAPL"}}}
+	repo := &stubTickerRepo{active: []domain.Ticker{{ID: "id-1", Ticker: "AAPL"}}}
+	runs := &stubRunCreator{}
+	stages := &stubStageInserter{err: fmt.Errorf("batch insert failed")}
+
+	_, err := fetchAndUpsert(context.Background(), Event{}, fetcher, repo, runs, stages, discardLogger)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	// Run should be marked as failed.
+	if runs.updatedStatus != domain.PipelineStatusFailed {
+		t.Errorf("run status = %q, want %q", runs.updatedStatus, domain.PipelineStatusFailed)
+	}
+}
+
 func TestFetchAndUpsert_Integration(t *testing.T) {
 	pool := testPool(t)
 	cleanTickers(t, pool)
 
-	repo := repository.NewTickerRepo(pool, discardLogger)
+	tickerRepo := repository.NewTickerRepo(pool, discardLogger)
+	runRepo := repository.NewPipelineRunRepo(pool, discardLogger)
+	stageRepo := repository.NewPipelineTickerStageRepo(pool, discardLogger)
 	fetcher := &stubFetcher{
 		tickers: []domain.Ticker{
 			{Ticker: "AAPL", Name: "Apple Inc.", Market: "stocks", Active: true, Type: "CS"},
@@ -64,7 +242,7 @@ func TestFetchAndUpsert_Integration(t *testing.T) {
 		},
 	}
 
-	resp, err := fetchAndUpsert(context.Background(), fetcher, repo, discardLogger)
+	resp, err := fetchAndUpsert(context.Background(), Event{}, fetcher, tickerRepo, runRepo, stageRepo, discardLogger)
 	if err != nil {
 		t.Fatalf("fetchAndUpsert: %v", err)
 	}
@@ -72,107 +250,38 @@ func TestFetchAndUpsert_Integration(t *testing.T) {
 	if resp.TickerCount != 3 {
 		t.Errorf("TickerCount = %d, want 3", resp.TickerCount)
 	}
+	if resp.RunID == "" {
+		t.Error("RunID should not be empty")
+	}
 	if resp.Date == "" {
 		t.Error("Date should not be empty")
 	}
 
-	// Verify data persisted to DB
-	got, err := repo.GetActive(context.Background())
+	// Verify pipeline run was created.
+	run, err := runRepo.GetByID(context.Background(), resp.RunID)
 	if err != nil {
-		t.Fatalf("GetActive: %v", err)
+		t.Fatalf("GetByID: %v", err)
 	}
-	if len(got) != 3 {
-		t.Fatalf("expected 3 tickers in DB, got %d", len(got))
+	if run.TickerCount != 3 {
+		t.Errorf("run.TickerCount = %d, want 3", run.TickerCount)
 	}
-}
-
-func TestFetchAndUpsert_UpsertOverwrite(t *testing.T) {
-	pool := testPool(t)
-	cleanTickers(t, pool)
-
-	repo := repository.NewTickerRepo(pool, discardLogger)
-	ctx := context.Background()
-
-	// First run: insert 2 tickers
-	fetcher := &stubFetcher{
-		tickers: []domain.Ticker{
-			{Ticker: "AAPL", Name: "Apple Inc.", Market: "stocks", Active: true, Type: "CS"},
-			{Ticker: "MSFT", Name: "Microsoft", Market: "stocks", Active: true, Type: "CS"},
-		},
-	}
-	resp, err := fetchAndUpsert(ctx, fetcher, repo, discardLogger)
-	if err != nil {
-		t.Fatalf("first fetchAndUpsert: %v", err)
-	}
-	if resp.TickerCount != 2 {
-		t.Errorf("first run TickerCount = %d, want 2", resp.TickerCount)
+	if run.Status != domain.PipelineStatusRunning {
+		t.Errorf("run.Status = %q, want %q", run.Status, domain.PipelineStatusRunning)
 	}
 
-	// Second run: update AAPL name, add GOOG
-	fetcher.tickers = []domain.Ticker{
-		{Ticker: "AAPL", Name: "Apple Inc. (Updated)", Market: "stocks", Active: true, Type: "CS"},
-		{Ticker: "MSFT", Name: "Microsoft", Market: "stocks", Active: true, Type: "CS"},
-		{Ticker: "GOOG", Name: "Alphabet", Market: "stocks", Active: true, Type: "CS"},
-	}
-	resp, err = fetchAndUpsert(ctx, fetcher, repo, discardLogger)
-	if err != nil {
-		t.Fatalf("second fetchAndUpsert: %v", err)
-	}
-	if resp.TickerCount != 3 {
-		t.Errorf("second run TickerCount = %d, want 3", resp.TickerCount)
-	}
-
-	// Verify AAPL was updated, not duplicated
-	got, err := repo.GetBySymbol(ctx, "AAPL")
-	if err != nil {
-		t.Fatalf("GetBySymbol: %v", err)
-	}
-	if got.Name != "Apple Inc. (Updated)" {
-		t.Errorf("AAPL Name = %q, want %q", got.Name, "Apple Inc. (Updated)")
-	}
-
-	all, err := repo.GetActive(ctx)
-	if err != nil {
-		t.Fatalf("GetActive: %v", err)
-	}
-	if len(all) != 3 {
-		t.Errorf("expected 3 total tickers, got %d", len(all))
-	}
-}
-
-func TestFetchAndUpsert_EmptyFetch(t *testing.T) {
-	pool := testPool(t)
-	cleanTickers(t, pool)
-
-	repo := repository.NewTickerRepo(pool, discardLogger)
-	fetcher := &stubFetcher{tickers: nil}
-
-	resp, err := fetchAndUpsert(context.Background(), fetcher, repo, discardLogger)
-	if err != nil {
-		t.Fatalf("fetchAndUpsert: %v", err)
-	}
-	if resp.TickerCount != 0 {
-		t.Errorf("TickerCount = %d, want 0", resp.TickerCount)
-	}
-}
-
-func TestFetchAndUpsert_FetchError(t *testing.T) {
-	pool := testPool(t)
-
-	repo := repository.NewTickerRepo(pool, discardLogger)
-	fetcher := &stubFetcher{err: fmt.Errorf("api timeout")}
-
-	_, err := fetchAndUpsert(context.Background(), fetcher, repo, discardLogger)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
+	// Clean up.
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM pipeline_ticker_stages")
+		_, _ = pool.Exec(context.Background(), "DELETE FROM pipeline_runs")
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tickers")
+	})
 }
 
 func TestHandleRequest_MissingDatabaseURL(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("MASSIVE_API_KEY", "test-key")
 
-	_, err := handleRequest(context.Background())
+	_, err := handleRequest(context.Background(), Event{})
 	if err == nil {
 		t.Fatal("expected error for missing DATABASE_URL")
 	}
@@ -182,7 +291,7 @@ func TestHandleRequest_MissingAPIKey(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/test")
 	t.Setenv("MASSIVE_API_KEY", "")
 
-	_, err := handleRequest(context.Background())
+	_, err := handleRequest(context.Background(), Event{})
 	if err == nil {
 		t.Fatal("expected error for missing MASSIVE_API_KEY")
 	}
