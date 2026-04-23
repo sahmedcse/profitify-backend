@@ -10,4 +10,5 @@ type TickerEvent struct {
 	Ticker   string `json:"ticker"`    // e.g. "AAPL"
 	TickerID string `json:"ticker_id"` // UUID from tickers table
 	Date     string `json:"date"`      // "2006-01-02" format
+	RunID    string `json:"run_id"`    // UUID from pipeline_runs table (empty = no tracking)
 }
