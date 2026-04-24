@@ -2,7 +2,7 @@ package domain
 
 import "time"
 
-// TickerNews represents a news article from Polygon.io.
+// TickerNews represents a news article from Massive.
 type TickerNews struct {
 	ID            string    `json:"id"`
 	Title         string    `json:"title"`

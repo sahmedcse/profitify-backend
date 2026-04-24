@@ -1,6 +1,6 @@
 package domain
 
-// TickerDividend represents a single dividend event from Polygon.io.
+// TickerDividend represents a single dividend event from Massive.
 type TickerDividend struct {
 	ID                       string  `json:"id"`
 	TickerID                 string  `json:"ticker_id"`

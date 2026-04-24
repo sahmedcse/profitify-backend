@@ -28,5 +28,113 @@ services:
       - ./db/migrations:/migrations
     command: ["-dir", "/migrations", "postgres", "postgres://profitify:profitify@db:5432/profitify?sslmode=disable", "up"]
 
+  lambda-fetch-tickers:
+    build:
+      context: .
+      dockerfile: build/lambda-fetch-tickers.Dockerfile
+    container_name: profitify-lambda-fetch-tickers
+    profiles: ["lambda"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      APP_ENV: development
+    ports:
+      - "9000:8080"
+
+  lambda-fetch-technicals:
+    build:
+      context: .
+      dockerfile: build/lambda-fetch-technicals.Dockerfile
+    container_name: profitify-lambda-fetch-technicals
+    profiles: ["lambda"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      APP_ENV: development
+    ports:
+      - "9002:8080"
+
+  lambda-ingest-ohlcv:
+    build:
+      context: .
+      dockerfile: build/lambda-ingest-ohlcv.Dockerfile
+    container_name: profitify-lambda-ingest-ohlcv
+    profiles: ["lambda"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      APP_ENV: development
+    ports:
+      - "9001:8080"
+
+  lambda-enrich-ticker:
+    build:
+      context: .
+      dockerfile: build/lambda-enrich-ticker.Dockerfile
+    container_name: profitify-lambda-enrich-ticker
+    profiles: ["lambda"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      APP_ENV: development
+    ports:
+      - "9004:8080"
+
+  lambda-fetch-fundamentals:
+    build:
+      context: .
+      dockerfile: build/lambda-fetch-fundamentals.Dockerfile
+    container_name: profitify-lambda-fetch-fundamentals
+    profiles: ["lambda"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      APP_ENV: development
+    ports:
+      - "9003:8080"
+
+  lambda-compute-stats:
+    build:
+      context: .
+      dockerfile: build/lambda-compute-stats.Dockerfile
+    container_name: profitify-lambda-compute-stats
+    profiles: ["lambda"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      APP_ENV: development
+    ports:
+      - "9005:8080"
+
 volumes:
   profitify-db-data:

@@ -23,8 +23,11 @@ internal/               Private application code
   api/                  Router and HTTP handler wiring
     handler/            HTTP handlers
   config/               Environment variable loader
-  db/                   Database pool + migration runner
+  db/                   Database connection pool
+  domain/               Domain models
+  massive/              Massive SDK wrapper with retry logic
   middleware/           HTTP middleware (logging, etc.)
+  repository/           Database repositories (pgx)
   lambda/               Shared Lambda utilities
 db/migrations/          SQL migration files (goose, timestamp format)
 scripts/                Shell scripts (migrate.sh)

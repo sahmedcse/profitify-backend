@@ -30,7 +30,7 @@ func Load() (*Config, error) {
 // FetchTickersConfig holds configuration for the fetch-tickers Lambda.
 type FetchTickersConfig struct {
 	DatabaseURL   string
-	PolygonAPIKey string
+	MassiveAPIKey string
 	SQSQueueURL   string
 }
 
@@ -40,7 +40,7 @@ func LoadFetchTickers() (*FetchTickersConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := required("POLYGON_API_KEY")
+	apiKey, err := required("MASSIVE_API_KEY")
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func LoadFetchTickers() (*FetchTickersConfig, error) {
 
 	return &FetchTickersConfig{
 		DatabaseURL:   dbURL,
-		PolygonAPIKey: apiKey,
+		MassiveAPIKey: apiKey,
 		SQSQueueURL:   sqsURL,
 	}, nil
 }
@@ -76,7 +76,7 @@ func LoadStartPipeline() (*StartPipelineConfig, error) {
 // IngestOHLCVConfig holds configuration for the ingest-ohlcv Lambda.
 type IngestOHLCVConfig struct {
 	DatabaseURL   string
-	PolygonAPIKey string
+	MassiveAPIKey string
 }
 
 // LoadIngestOHLCV reads ingest-ohlcv Lambda configuration.
@@ -85,21 +85,67 @@ func LoadIngestOHLCV() (*IngestOHLCVConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := required("POLYGON_API_KEY")
+	apiKey, err := required("MASSIVE_API_KEY")
 	if err != nil {
 		return nil, err
 	}
 
 	return &IngestOHLCVConfig{
 		DatabaseURL:   dbURL,
-		PolygonAPIKey: apiKey,
+		MassiveAPIKey: apiKey,
+	}, nil
+}
+
+// FetchTechnicalsConfig holds configuration for the fetch-technicals Lambda.
+type FetchTechnicalsConfig struct {
+	DatabaseURL   string
+	MassiveAPIKey string
+}
+
+// LoadFetchTechnicals reads fetch-technicals Lambda configuration.
+func LoadFetchTechnicals() (*FetchTechnicalsConfig, error) {
+	dbURL, err := required("DATABASE_URL")
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := required("MASSIVE_API_KEY")
+	if err != nil {
+		return nil, err
+	}
+
+	return &FetchTechnicalsConfig{
+		DatabaseURL:   dbURL,
+		MassiveAPIKey: apiKey,
+	}, nil
+}
+
+// FetchFundamentalsConfig holds configuration for the fetch-fundamentals Lambda.
+type FetchFundamentalsConfig struct {
+	DatabaseURL   string
+	MassiveAPIKey string
+}
+
+// LoadFetchFundamentals reads fetch-fundamentals Lambda configuration.
+func LoadFetchFundamentals() (*FetchFundamentalsConfig, error) {
+	dbURL, err := required("DATABASE_URL")
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := required("MASSIVE_API_KEY")
+	if err != nil {
+		return nil, err
+	}
+
+	return &FetchFundamentalsConfig{
+		DatabaseURL:   dbURL,
+		MassiveAPIKey: apiKey,
 	}, nil
 }
 
 // EnrichTickerConfig holds configuration for the enrich-ticker Lambda.
 type EnrichTickerConfig struct {
 	DatabaseURL   string
-	PolygonAPIKey string
+	MassiveAPIKey string
 }
 
 // LoadEnrichTicker reads enrich-ticker Lambda configuration.
@@ -108,20 +154,21 @@ func LoadEnrichTicker() (*EnrichTickerConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := required("POLYGON_API_KEY")
+	apiKey, err := required("MASSIVE_API_KEY")
 	if err != nil {
 		return nil, err
 	}
 
 	return &EnrichTickerConfig{
 		DatabaseURL:   dbURL,
-		PolygonAPIKey: apiKey,
+		MassiveAPIKey: apiKey,
 	}, nil
 }
 
 // ComputeStatsConfig holds configuration for the compute-stats Lambda.
 type ComputeStatsConfig struct {
-	DatabaseURL string
+	DatabaseURL   string
+	MassiveAPIKey string
 }
 
 // LoadComputeStats reads compute-stats Lambda configuration.
@@ -130,9 +177,14 @@ func LoadComputeStats() (*ComputeStatsConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	apiKey, err := required("MASSIVE_API_KEY")
+	if err != nil {
+		return nil, err
+	}
 
 	return &ComputeStatsConfig{
-		DatabaseURL: dbURL,
+		DatabaseURL:   dbURL,
+		MassiveAPIKey: apiKey,
 	}, nil
 }
 

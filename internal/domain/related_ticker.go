@@ -2,7 +2,7 @@ package domain
 
 import "time"
 
-// RelatedTicker represents a Polygon.io-provided relationship between two tickers.
+// RelatedTicker represents a Massive-provided relationship between two tickers.
 type RelatedTicker struct {
 	ID              string    `json:"id"`
 	TickerID        string    `json:"ticker_id"`

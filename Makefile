@@ -1,4 +1,4 @@
-.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql
+.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down build-lambda-enrich-ticker docker-lambda-enrich-ticker-up docker-lambda-enrich-ticker-invoke docker-lambda-enrich-ticker-down build-lambda-compute-stats docker-lambda-compute-stats-up docker-lambda-compute-stats-invoke docker-lambda-compute-stats-down
 
 # Docker parameters
 DOCKER_COMPOSE=docker compose
@@ -29,9 +29,32 @@ build-api:
 build-cron:
 	$(GOBUILD) -o $(BINARY_DIR)/cron ./cmd/cron
 
+## build-lambda-fetch-tickers: Build FetchTickers Lambda (linux/arm64)
+build-lambda-fetch-tickers:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-fetch-tickers/bootstrap ./cmd/lambda-fetch-tickers
+
+## build-lambda-ingest-ohlcv: Build IngestOHLCV Lambda (linux/arm64)
+build-lambda-ingest-ohlcv:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-ingest-ohlcv/bootstrap ./cmd/lambda-ingest-ohlcv
+
+## build-lambda-fetch-technicals: Build FetchTechnicals Lambda (linux/arm64)
+build-lambda-fetch-technicals:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-fetch-technicals/bootstrap ./cmd/lambda-fetch-technicals
+
+## build-lambda-fetch-fundamentals: Build FetchFundamentals Lambda (linux/arm64)
+build-lambda-fetch-fundamentals:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-fetch-fundamentals/bootstrap ./cmd/lambda-fetch-fundamentals
+
+## build-lambda-enrich-ticker: Build EnrichTicker Lambda (linux/arm64)
+build-lambda-enrich-ticker:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-enrich-ticker/bootstrap ./cmd/lambda-enrich-ticker
+
+## build-lambda-compute-stats: Build ComputeStats Lambda (linux/arm64)
+build-lambda-compute-stats:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-compute-stats/bootstrap ./cmd/lambda-compute-stats
+
 ## build-lambdas: Build all Lambda functions (linux/arm64 for Graviton2)
-build-lambdas:
-	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-example/bootstrap ./cmd/lambda-example
+build-lambdas: build-lambda-fetch-tickers build-lambda-ingest-ohlcv build-lambda-fetch-technicals build-lambda-fetch-fundamentals build-lambda-enrich-ticker build-lambda-compute-stats
 
 ## lint: Run golangci-lint
 lint:
@@ -50,6 +73,10 @@ test-cover:
 	$(GOTEST) -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
+
+## test-integration: Run integration tests against Docker DB
+test-integration:
+	DATABASE_URL=$(DOCKER_DB_URL) $(GOTEST) -count=1 ./...
 
 ## vet: Run go vet
 vet:
@@ -107,3 +134,96 @@ docker-migrate-status:
 ## docker-psql: Open psql shell to local Docker DB
 docker-psql:
 	docker exec -it profitify-db psql -U profitify -d profitify
+
+## docker-lambda-fetch-tickers-up: Build and start FetchTickers Lambda locally (RIE on :9000)
+docker-lambda-fetch-tickers-up:
+	@if [ -z "$$MASSIVE_API_KEY" ]; then \
+		echo "ERROR: MASSIVE_API_KEY must be set to run the FetchTickers Lambda locally." >&2; \
+		echo "       Export it in your shell or add it to .env before running this target." >&2; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-fetch-tickers
+
+## docker-lambda-fetch-tickers-invoke: Invoke the local FetchTickers Lambda via the RIE
+docker-lambda-fetch-tickers-invoke:
+	curl -sS -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}' && echo
+
+## docker-lambda-fetch-tickers-down: Stop the local FetchTickers Lambda container
+docker-lambda-fetch-tickers-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-fetch-tickers
+
+## docker-lambda-ingest-ohlcv-up: Build and start IngestOHLCV Lambda locally (RIE on :9001)
+docker-lambda-ingest-ohlcv-up:
+	@if [ -z "$$MASSIVE_API_KEY" ]; then \
+		echo "ERROR: MASSIVE_API_KEY must be set to run the IngestOHLCV Lambda locally." >&2; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-ingest-ohlcv
+
+## docker-lambda-ingest-ohlcv-invoke: Invoke the local IngestOHLCV Lambda via the RIE
+docker-lambda-ingest-ohlcv-invoke:
+	curl -sS -XPOST "http://localhost:9001/2015-03-31/functions/function/invocations" -d '{"ticker":"AAPL","ticker_id":"","date":"2026-04-08"}' && echo
+
+## docker-lambda-ingest-ohlcv-down: Stop the local IngestOHLCV Lambda container
+docker-lambda-ingest-ohlcv-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-ingest-ohlcv
+
+## docker-lambda-fetch-technicals-up: Build and start FetchTechnicals Lambda locally (RIE on :9002)
+docker-lambda-fetch-technicals-up:
+	@if [ -z "$$MASSIVE_API_KEY" ]; then \
+		echo "ERROR: MASSIVE_API_KEY must be set." >&2; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-fetch-technicals
+
+## docker-lambda-fetch-technicals-invoke: Invoke the local FetchTechnicals Lambda
+docker-lambda-fetch-technicals-invoke:
+	curl -sS -XPOST "http://localhost:9002/2015-03-31/functions/function/invocations" -d '{"ticker":"AAPL","ticker_id":"","date":"2026-04-08"}' && echo
+
+## docker-lambda-fetch-technicals-down: Stop the local FetchTechnicals Lambda container
+docker-lambda-fetch-technicals-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-fetch-technicals
+
+## docker-lambda-fetch-fundamentals-up: Build and start FetchFundamentals Lambda locally (RIE on :9003)
+docker-lambda-fetch-fundamentals-up:
+	@if [ -z "$$MASSIVE_API_KEY" ]; then \
+		echo "ERROR: MASSIVE_API_KEY must be set." >&2; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-fetch-fundamentals
+
+## docker-lambda-fetch-fundamentals-invoke: Invoke the local FetchFundamentals Lambda
+docker-lambda-fetch-fundamentals-invoke:
+	curl -sS -XPOST "http://localhost:9003/2015-03-31/functions/function/invocations" -d '{"ticker":"AAPL","ticker_id":"","date":"2026-04-08"}' && echo
+
+## docker-lambda-fetch-fundamentals-down: Stop the local FetchFundamentals Lambda container
+docker-lambda-fetch-fundamentals-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-fetch-fundamentals
+
+## docker-lambda-enrich-ticker-up: Build and start EnrichTicker Lambda locally (RIE on :9004)
+docker-lambda-enrich-ticker-up:
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-enrich-ticker
+
+## docker-lambda-enrich-ticker-invoke: Invoke the local EnrichTicker Lambda
+docker-lambda-enrich-ticker-invoke:
+	curl -sS -XPOST "http://localhost:9004/2015-03-31/functions/function/invocations" -d '{"ticker":"AAPL","ticker_id":"","date":"2026-04-08"}' && echo
+
+## docker-lambda-enrich-ticker-down: Stop the local EnrichTicker Lambda container
+docker-lambda-enrich-ticker-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-enrich-ticker
+
+## docker-lambda-compute-stats-up: Build and start ComputeStats Lambda locally (RIE on :9005)
+docker-lambda-compute-stats-up:
+	@if [ -z "$$MASSIVE_API_KEY" ]; then \
+		echo "ERROR: MASSIVE_API_KEY must be set." >&2; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-compute-stats
+
+## docker-lambda-compute-stats-invoke: Invoke the local ComputeStats Lambda
+docker-lambda-compute-stats-invoke:
+	curl -sS -XPOST "http://localhost:9005/2015-03-31/functions/function/invocations" -d '{"ticker":"AAPL","ticker_id":"","date":"2026-04-08"}' && echo
+
+## docker-lambda-compute-stats-down: Stop the local ComputeStats Lambda container
+docker-lambda-compute-stats-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-compute-stats
