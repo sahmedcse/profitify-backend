@@ -1,11 +1,11 @@
 module github.com/profitify/profitify-backend
 
-go 1.23.0
+go 1.25.0
 
 require (
 	github.com/aws/aws-lambda-go v1.47.0
 	github.com/go-chi/chi/v5 v5.2.1
-	github.com/jackc/pgx/v5 v5.7.4
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/massive-com/client-go/v2 v2.0.0
 	github.com/pressly/goose/v3 v3.24.1
 )
@@ -26,7 +26,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
 )
