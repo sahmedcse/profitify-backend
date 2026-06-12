@@ -29,17 +29,12 @@ func Load() (*Config, error) {
 
 // FetchTickersConfig holds configuration for the fetch-tickers Lambda.
 type FetchTickersConfig struct {
-	DatabaseURL   string
 	MassiveAPIKey string
 	SQSQueueURL   string
 }
 
 // LoadFetchTickers reads fetch-tickers Lambda configuration.
 func LoadFetchTickers() (*FetchTickersConfig, error) {
-	dbURL, err := required("DATABASE_URL")
-	if err != nil {
-		return nil, err
-	}
 	apiKey, err := required("MASSIVE_API_KEY")
 	if err != nil {
 		return nil, err
@@ -50,7 +45,6 @@ func LoadFetchTickers() (*FetchTickersConfig, error) {
 	}
 
 	return &FetchTickersConfig{
-		DatabaseURL:   dbURL,
 		MassiveAPIKey: apiKey,
 		SQSQueueURL:   sqsURL,
 	}, nil
