@@ -111,14 +111,14 @@ func TestFetchAndPublish_PreservesTickerFields(t *testing.T) {
 	}
 
 	msg := pub.published[0]
-	if msg.Ticker.Name != "Apple Inc." {
-		t.Errorf("name = %q, want %q", msg.Ticker.Name, "Apple Inc.")
+	if msg.Name != "Apple Inc." {
+		t.Errorf("name = %q, want %q", msg.Name, "Apple Inc.")
 	}
-	if msg.Ticker.PrimaryExchange != "XNAS" {
-		t.Errorf("primary_exchange = %q, want %q", msg.Ticker.PrimaryExchange, "XNAS")
+	if msg.PrimaryExchange != "XNAS" {
+		t.Errorf("primary_exchange = %q, want %q", msg.PrimaryExchange, "XNAS")
 	}
-	if msg.Ticker.CIK != "0000320193" {
-		t.Errorf("cik = %q, want %q", msg.Ticker.CIK, "0000320193")
+	if msg.CIK != "0000320193" {
+		t.Errorf("cik = %q, want %q", msg.CIK, "0000320193")
 	}
 }
 
