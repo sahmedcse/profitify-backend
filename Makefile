@@ -142,6 +142,10 @@ docker-lambda-fetch-tickers-up:
 		echo "       Export it in your shell or add it to .env before running this target." >&2; \
 		exit 1; \
 	fi
+	@if [ -z "$$SQS_QUEUE_URL" ]; then \
+		echo "ERROR: SQS_QUEUE_URL must be set to run the FetchTickers Lambda locally." >&2; \
+		exit 1; \
+	fi
 	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-fetch-tickers
 
 ## docker-lambda-fetch-tickers-invoke: Invoke the local FetchTickers Lambda via the RIE
