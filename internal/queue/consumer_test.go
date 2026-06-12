@@ -149,41 +149,41 @@ func TestParseSQSEvent_PreservesAllFields(t *testing.T) {
 	}
 
 	got := result.Messages[0]
-	if got.Ticker.ID != "abc-123" {
-		t.Errorf("ID = %q, want %q", got.Ticker.ID, "abc-123")
+	if got.ID != "abc-123" {
+		t.Errorf("ID = %q, want %q", got.ID, "abc-123")
 	}
 	if got.Ticker.Ticker != "AAPL" {
 		t.Errorf("Ticker = %q, want %q", got.Ticker.Ticker, "AAPL")
 	}
-	if got.Ticker.Name != "Apple Inc." {
-		t.Errorf("Name = %q, want %q", got.Ticker.Name, "Apple Inc.")
+	if got.Name != "Apple Inc." {
+		t.Errorf("Name = %q, want %q", got.Name, "Apple Inc.")
 	}
-	if got.Ticker.Market != "stocks" {
-		t.Errorf("Market = %q, want %q", got.Ticker.Market, "stocks")
+	if got.Market != "stocks" {
+		t.Errorf("Market = %q, want %q", got.Market, "stocks")
 	}
-	if got.Ticker.PrimaryExchange != "XNAS" {
-		t.Errorf("PrimaryExchange = %q, want %q", got.Ticker.PrimaryExchange, "XNAS")
+	if got.PrimaryExchange != "XNAS" {
+		t.Errorf("PrimaryExchange = %q, want %q", got.PrimaryExchange, "XNAS")
 	}
-	if got.Ticker.Type != "CS" {
-		t.Errorf("Type = %q, want %q", got.Ticker.Type, "CS")
+	if got.Type != "CS" {
+		t.Errorf("Type = %q, want %q", got.Type, "CS")
 	}
-	if !got.Ticker.Active {
+	if !got.Active {
 		t.Error("Active = false, want true")
 	}
-	if got.Ticker.CurrencyName != "usd" {
-		t.Errorf("CurrencyName = %q, want %q", got.Ticker.CurrencyName, "usd")
+	if got.CurrencyName != "usd" {
+		t.Errorf("CurrencyName = %q, want %q", got.CurrencyName, "usd")
 	}
-	if got.Ticker.Locale != "us" {
-		t.Errorf("Locale = %q, want %q", got.Ticker.Locale, "us")
+	if got.Locale != "us" {
+		t.Errorf("Locale = %q, want %q", got.Locale, "us")
 	}
-	if got.Ticker.CIK != "0000320193" {
-		t.Errorf("CIK = %q, want %q", got.Ticker.CIK, "0000320193")
+	if got.CIK != "0000320193" {
+		t.Errorf("CIK = %q, want %q", got.CIK, "0000320193")
 	}
-	if got.Ticker.ListDate != "1980-12-12" {
-		t.Errorf("ListDate = %q, want %q", got.Ticker.ListDate, "1980-12-12")
+	if got.ListDate != "1980-12-12" {
+		t.Errorf("ListDate = %q, want %q", got.ListDate, "1980-12-12")
 	}
-	if got.Ticker.Sector != "Technology" {
-		t.Errorf("Sector = %q, want %q", got.Ticker.Sector, "Technology")
+	if got.Sector != "Technology" {
+		t.Errorf("Sector = %q, want %q", got.Sector, "Technology")
 	}
 	if got.Date != "2026-06-07" {
 		t.Errorf("Date = %q, want %q", got.Date, "2026-06-07")
