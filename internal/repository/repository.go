@@ -57,7 +57,7 @@ type PipelineRunRepository interface {
 	Create(ctx context.Context, run *domain.PipelineRun) (*domain.PipelineRun, error)
 	GetByID(ctx context.Context, id string) (*domain.PipelineRun, error)
 	UpdateStatus(ctx context.Context, id string, status string, errorMessage string) error
-	UpdateCounts(ctx context.Context, id string) error
+	UpdateSFNArn(ctx context.Context, id, arn string) error
 	MarkCompleted(ctx context.Context, id string) error
 }
 
