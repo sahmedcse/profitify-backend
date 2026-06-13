@@ -1,4 +1,4 @@
-.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down build-lambda-enrich-ticker docker-lambda-enrich-ticker-up docker-lambda-enrich-ticker-invoke docker-lambda-enrich-ticker-down build-lambda-compute-stats docker-lambda-compute-stats-up docker-lambda-compute-stats-invoke docker-lambda-compute-stats-down
+.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down build-lambda-enrich-ticker docker-lambda-enrich-ticker-up docker-lambda-enrich-ticker-invoke docker-lambda-enrich-ticker-down build-lambda-compute-stats docker-lambda-compute-stats-up docker-lambda-compute-stats-invoke docker-lambda-compute-stats-down build-lambda-start-pipeline docker-lambda-start-pipeline-up docker-lambda-start-pipeline-invoke docker-lambda-start-pipeline-down
 
 # Docker parameters
 DOCKER_COMPOSE=docker compose
@@ -53,8 +53,12 @@ build-lambda-enrich-ticker:
 build-lambda-compute-stats:
 	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-compute-stats/bootstrap ./cmd/lambda-compute-stats
 
+## build-lambda-start-pipeline: Build StartPipeline Lambda (linux/arm64)
+build-lambda-start-pipeline:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-start-pipeline/bootstrap ./cmd/lambda-start-pipeline
+
 ## build-lambdas: Build all Lambda functions (linux/arm64 for Graviton2)
-build-lambdas: build-lambda-fetch-tickers build-lambda-ingest-ohlcv build-lambda-fetch-technicals build-lambda-fetch-fundamentals build-lambda-enrich-ticker build-lambda-compute-stats
+build-lambdas: build-lambda-fetch-tickers build-lambda-ingest-ohlcv build-lambda-fetch-technicals build-lambda-fetch-fundamentals build-lambda-enrich-ticker build-lambda-compute-stats build-lambda-start-pipeline
 
 ## lint: Run golangci-lint
 lint:
@@ -231,3 +235,19 @@ docker-lambda-compute-stats-invoke:
 ## docker-lambda-compute-stats-down: Stop the local ComputeStats Lambda container
 docker-lambda-compute-stats-down:
 	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-compute-stats
+
+## docker-lambda-start-pipeline-up: Build and start StartPipeline Lambda locally (RIE on :9006)
+docker-lambda-start-pipeline-up:
+	@if [ -z "$$SFN_ARN" ]; then \
+		echo "ERROR: SFN_ARN must be set." >&2; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-start-pipeline
+
+## docker-lambda-start-pipeline-invoke: Invoke the local StartPipeline Lambda
+docker-lambda-start-pipeline-invoke:
+	curl -sS -XPOST "http://localhost:9006/2015-03-31/functions/function/invocations" -d '{"Records":[{"messageId":"test-1","body":"{\"ticker\":\"AAPL\",\"id\":\"uuid\",\"date\":\"2026-06-12\"}"}]}' && echo
+
+## docker-lambda-start-pipeline-down: Stop the local StartPipeline Lambda container
+docker-lambda-start-pipeline-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-start-pipeline
