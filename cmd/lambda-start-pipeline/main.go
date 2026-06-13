@@ -27,9 +27,12 @@ type runCreator interface {
 	UpdateSFNArn(ctx context.Context, id, arn string) error
 }
 
-// stageInserter abstracts the stage repository for testing.
-type stageInserter interface {
-	BulkInsert(ctx context.Context, stages []domain.PipelineTickerStage) error
+// stageTracker abstracts the stage repository for testing.
+// Matches pipeline.StageUpdater so the real repo satisfies it.
+type stageTracker interface {
+	MarkRunning(ctx context.Context, runID, tickerID, stage string) (string, error)
+	MarkCompleted(ctx context.Context, runID, tickerID, stage string) error
+	MarkFailed(ctx context.Context, runID, tickerID, stage, errorMessage string) error
 }
 
 // sfnStarter abstracts the Step Functions client for testing.
@@ -38,13 +41,13 @@ type sfnStarter interface {
 }
 
 // startPipeline processes an SQS event containing ticker messages.
-// For each message it creates a pipeline run, inserts pending stages,
+// For each message it creates a pipeline run, tracks its own stage,
 // and starts a Step Function execution.
 func startPipeline(
 	ctx context.Context,
 	event events.SQSEvent,
 	runs runCreator,
-	stages stageInserter,
+	stages stageTracker,
 	sfnClient sfnStarter,
 	sfnArn string,
 	logger *slog.Logger,
@@ -61,7 +64,7 @@ func startPipeline(
 			continue
 		}
 
-		if err := processTicker(ctx, record.MessageId, msg, runs, stages, sfnClient, sfnArn, logger); err != nil {
+		if err := processTicker(ctx, msg, runs, stages, sfnClient, sfnArn, logger); err != nil {
 			logger.Error("failed to process ticker", "ticker", msg.Ticker.Ticker, "messageId", record.MessageId, "error", err)
 			failures = append(failures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
@@ -74,10 +77,9 @@ func startPipeline(
 
 func processTicker(
 	ctx context.Context,
-	_ string,
 	msg queue.TickerMessage,
 	runs runCreator,
-	stages stageInserter,
+	stages stageTracker,
 	sfnClient sfnStarter,
 	sfnArn string,
 	logger *slog.Logger,
@@ -95,21 +97,11 @@ func processTicker(
 
 	logger.Info("pipeline run created", "runId", run.ID, "ticker", msg.Ticker.Ticker)
 
-	// 2. Insert pending stages.
-	stageRows := make([]domain.PipelineTickerStage, len(domain.AllStages))
-	for i, stage := range domain.AllStages {
-		stageRows[i] = domain.PipelineTickerStage{
-			RunID:    run.ID,
-			TickerID: msg.Ticker.ID,
-			Ticker:   msg.Ticker.Ticker,
-			Stage:    stage,
-			Status:   domain.PipelineStatusPending,
-		}
-	}
-
-	if err := stages.BulkInsert(ctx, stageRows); err != nil {
+	// 2. Track start_pipeline stage.
+	st := pipeline.NewStageTracker(stages, run.ID, msg.Ticker.ID, domain.StageStartPipeline, logger)
+	if err := st.Begin(ctx); err != nil {
 		_ = runs.UpdateStatus(ctx, run.ID, domain.PipelineStatusFailed, err.Error())
-		return fmt.Errorf("inserting stages: %w", err)
+		return fmt.Errorf("tracking start_pipeline stage: %w", err)
 	}
 
 	// 3. Start Step Function execution.
@@ -122,6 +114,7 @@ func processTicker(
 
 	sfnInput, err := json.Marshal(tickerEvent)
 	if err != nil {
+		st.End(ctx, err)
 		_ = runs.UpdateStatus(ctx, run.ID, domain.PipelineStatusFailed, err.Error())
 		return fmt.Errorf("marshaling SFN input: %w", err)
 	}
@@ -132,6 +125,7 @@ func processTicker(
 		Input:           &inputStr,
 	})
 	if err != nil {
+		st.End(ctx, err)
 		_ = runs.UpdateStatus(ctx, run.ID, domain.PipelineStatusFailed, err.Error())
 		return fmt.Errorf("starting SFN execution: %w", err)
 	}
@@ -140,6 +134,9 @@ func processTicker(
 	if err := runs.UpdateSFNArn(ctx, run.ID, *out.ExecutionArn); err != nil {
 		logger.Warn("failed to save SFN ARN", "runId", run.ID, "error", err)
 	}
+
+	// 5. Mark start_pipeline stage completed.
+	st.End(ctx, nil)
 
 	logger.Info("SFN execution started", "runId", run.ID, "ticker", msg.Ticker.Ticker, "executionArn", *out.ExecutionArn)
 	return nil

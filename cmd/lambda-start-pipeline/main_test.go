@@ -38,15 +38,35 @@ func (s *stubRunRepo) UpdateStatus(_ context.Context, id, status, errMsg string)
 func (s *stubRunRepo) UpdateSFNArn(_ context.Context, id, arn string) error             { return nil }
 
 type stubStageRepo struct {
-	inserted []domain.PipelineTickerStage
-	err      error
+	runningCalls   []stageCall
+	completedCalls []stageCall
+	failedCalls    []stageFailCall
+	markRunningErr error
 }
 
-func (s *stubStageRepo) BulkInsert(_ context.Context, stages []domain.PipelineTickerStage) error {
-	if s.err != nil {
-		return s.err
+type stageCall struct {
+	runID, tickerID, stage string
+}
+
+type stageFailCall struct {
+	runID, tickerID, stage, errorMessage string
+}
+
+func (s *stubStageRepo) MarkRunning(_ context.Context, runID, tickerID, stage string) (string, error) {
+	s.runningCalls = append(s.runningCalls, stageCall{runID, tickerID, stage})
+	if s.markRunningErr != nil {
+		return "", s.markRunningErr
 	}
-	s.inserted = append(s.inserted, stages...)
+	return "stage-001", nil
+}
+
+func (s *stubStageRepo) MarkCompleted(_ context.Context, runID, tickerID, stage string) error {
+	s.completedCalls = append(s.completedCalls, stageCall{runID, tickerID, stage})
+	return nil
+}
+
+func (s *stubStageRepo) MarkFailed(_ context.Context, runID, tickerID, stage, errorMessage string) error {
+	s.failedCalls = append(s.failedCalls, stageFailCall{runID, tickerID, stage, errorMessage})
 	return nil
 }
 
@@ -142,9 +162,18 @@ func TestStartPipeline_HappyPath(t *testing.T) {
 		t.Errorf("Date = %q, want %q", runs.created.Date, "2026-06-12")
 	}
 
-	// 5 stages inserted.
-	if len(stages.inserted) != 5 {
-		t.Fatalf("stages inserted = %d, want 5", len(stages.inserted))
+	// start_pipeline stage marked running then completed.
+	if len(stages.runningCalls) != 1 {
+		t.Fatalf("MarkRunning calls = %d, want 1", len(stages.runningCalls))
+	}
+	if stages.runningCalls[0].stage != domain.StageStartPipeline {
+		t.Errorf("MarkRunning stage = %q, want %q", stages.runningCalls[0].stage, domain.StageStartPipeline)
+	}
+	if len(stages.completedCalls) != 1 {
+		t.Fatalf("MarkCompleted calls = %d, want 1", len(stages.completedCalls))
+	}
+	if stages.completedCalls[0].stage != domain.StageStartPipeline {
+		t.Errorf("MarkCompleted stage = %q, want %q", stages.completedCalls[0].stage, domain.StageStartPipeline)
 	}
 
 	// SFN started.
@@ -176,36 +205,12 @@ func TestStartPipeline_RunCreateFails(t *testing.T) {
 		t.Fatalf("expected 1 failure, got %d", len(resp.BatchItemFailures))
 	}
 
-	// No stages or SFN calls.
-	if len(stages.inserted) != 0 {
-		t.Errorf("stages should not be inserted on run create failure")
+	// No stage or SFN calls.
+	if len(stages.runningCalls) != 0 {
+		t.Errorf("MarkRunning should not be called on run create failure")
 	}
 	if sfnClient.input != nil {
 		t.Error("SFN should not be called on run create failure")
-	}
-}
-
-func TestStartPipeline_BulkInsertFails(t *testing.T) {
-	runs := &trackingRunRepo{}
-	stages := &stubStageRepo{err: fmt.Errorf("stage insert error")}
-	sfnClient := &stubSFNClient{}
-
-	event := makeSQSEvent(validMessage())
-	resp, err := startPipeline(context.Background(), event, runs, stages, sfnClient, "arn:sfn:test", discardLogger)
-	if err != nil {
-		t.Fatalf("startPipeline: %v", err)
-	}
-
-	if len(resp.BatchItemFailures) != 1 {
-		t.Fatalf("expected 1 failure, got %d", len(resp.BatchItemFailures))
-	}
-
-	// Run should be marked failed.
-	if len(runs.statusUpdates) == 0 {
-		t.Fatal("expected UpdateStatus to be called")
-	}
-	if runs.statusUpdates[0].status != domain.PipelineStatusFailed {
-		t.Errorf("status = %q, want %q", runs.statusUpdates[0].status, domain.PipelineStatusFailed)
 	}
 }
 
@@ -231,22 +236,54 @@ func TestStartPipeline_SFNStartFails(t *testing.T) {
 	if runs.statusUpdates[0].status != domain.PipelineStatusFailed {
 		t.Errorf("status = %q, want %q", runs.statusUpdates[0].status, domain.PipelineStatusFailed)
 	}
+
+	// Stage should be marked failed.
+	if len(stages.failedCalls) != 1 {
+		t.Fatalf("MarkFailed calls = %d, want 1", len(stages.failedCalls))
+	}
+	if stages.failedCalls[0].stage != domain.StageStartPipeline {
+		t.Errorf("MarkFailed stage = %q, want %q", stages.failedCalls[0].stage, domain.StageStartPipeline)
+	}
+}
+
+func TestStartPipeline_MarkRunningFails(t *testing.T) {
+	runs := &trackingRunRepo{}
+	stages := &stubStageRepo{markRunningErr: fmt.Errorf("stage insert error")}
+	sfnClient := &stubSFNClient{}
+
+	event := makeSQSEvent(validMessage())
+	resp, err := startPipeline(context.Background(), event, runs, stages, sfnClient, "arn:sfn:test", discardLogger)
+	if err != nil {
+		t.Fatalf("startPipeline: %v", err)
+	}
+
+	if len(resp.BatchItemFailures) != 1 {
+		t.Fatalf("expected 1 failure, got %d", len(resp.BatchItemFailures))
+	}
+
+	// Run should be marked failed.
+	if len(runs.statusUpdates) == 0 {
+		t.Fatal("expected UpdateStatus to be called")
+	}
+	if runs.statusUpdates[0].status != domain.PipelineStatusFailed {
+		t.Errorf("status = %q, want %q", runs.statusUpdates[0].status, domain.PipelineStatusFailed)
+	}
+
+	// SFN should not be called.
+	if sfnClient.input != nil {
+		t.Error("SFN should not be called when stage tracking fails")
+	}
 }
 
 func TestStartPipeline_UpdateSFNArnFails(t *testing.T) {
 	runs := &trackingRunRepo{}
-	// Override UpdateSFNArn to fail — use a custom stub.
+	// Override UpdateSFNArn to fail.
 	failArnRepo := &failArnRunRepo{trackingRunRepo: runs}
 	stages := &stubStageRepo{}
 	sfnClient := &stubSFNClient{}
 
 	event := makeSQSEvent(validMessage())
-	resp, err := startPipeline(context.Background(), event, runs, stages, sfnClient, "arn:sfn:test", discardLogger)
-	// UpdateSFNArn failure is non-fatal when using the tracking repo.
-	// Let's test with the failArn repo directly.
-	_ = resp
-
-	resp, err = startPipeline(context.Background(), event, failArnRepo, stages, sfnClient, "arn:sfn:test", discardLogger)
+	resp, err := startPipeline(context.Background(), event, failArnRepo, stages, sfnClient, "arn:sfn:test", discardLogger)
 	if err != nil {
 		t.Fatalf("startPipeline: %v", err)
 	}
@@ -254,6 +291,11 @@ func TestStartPipeline_UpdateSFNArnFails(t *testing.T) {
 	// Non-fatal: no batch failures.
 	if len(resp.BatchItemFailures) != 0 {
 		t.Errorf("expected 0 failures (UpdateSFNArn is non-fatal), got %d", len(resp.BatchItemFailures))
+	}
+
+	// Stage still completed despite ARN failure.
+	if len(stages.completedCalls) != 1 {
+		t.Fatalf("MarkCompleted calls = %d, want 1", len(stages.completedCalls))
 	}
 }
 
@@ -264,36 +306,6 @@ type failArnRunRepo struct {
 
 func (f *failArnRunRepo) UpdateSFNArn(_ context.Context, id, arn string) error {
 	return fmt.Errorf("arn update failed")
-}
-
-func TestStartPipeline_StagesMatchAllStages(t *testing.T) {
-	runs := &trackingRunRepo{}
-	stages := &stubStageRepo{}
-	sfnClient := &stubSFNClient{}
-
-	event := makeSQSEvent(validMessage())
-	_, err := startPipeline(context.Background(), event, runs, stages, sfnClient, "arn:sfn:test", discardLogger)
-	if err != nil {
-		t.Fatalf("startPipeline: %v", err)
-	}
-
-	if len(stages.inserted) != len(domain.AllStages) {
-		t.Fatalf("inserted %d stages, want %d", len(stages.inserted), len(domain.AllStages))
-	}
-	for i, s := range stages.inserted {
-		if s.Stage != domain.AllStages[i] {
-			t.Errorf("stage[%d] = %q, want %q", i, s.Stage, domain.AllStages[i])
-		}
-		if s.RunID != "run-001" {
-			t.Errorf("stage[%d].RunID = %q, want %q", i, s.RunID, "run-001")
-		}
-		if s.TickerID != "ticker-uuid-1" {
-			t.Errorf("stage[%d].TickerID = %q, want %q", i, s.TickerID, "ticker-uuid-1")
-		}
-		if s.Status != domain.PipelineStatusPending {
-			t.Errorf("stage[%d].Status = %q, want %q", i, s.Status, domain.PipelineStatusPending)
-		}
-	}
 }
 
 func TestStartPipeline_MalformedSQSBody(t *testing.T) {
@@ -327,13 +339,11 @@ func TestStartPipeline_MalformedSQSBody(t *testing.T) {
 
 func TestStartPipeline_BatchItemFailures(t *testing.T) {
 	// First message succeeds, second fails (run create error).
-	callCount := 0
 	conditionalRepo := &conditionalRunRepo{
 		failOn: 1, // fail on second call (0-indexed)
 	}
 	stages := &stubStageRepo{}
 	sfnClient := &stubSFNClient{}
-	_ = callCount
 
 	msg1 := validMessage()
 	msg2 := validMessage()
@@ -354,9 +364,9 @@ func TestStartPipeline_BatchItemFailures(t *testing.T) {
 		t.Errorf("failed message ID = %q, want %q", resp.BatchItemFailures[0].ItemIdentifier, "msg-1")
 	}
 
-	// First message's stages should be inserted.
-	if len(stages.inserted) != 5 {
-		t.Errorf("stages = %d, want 5 (only from successful message)", len(stages.inserted))
+	// First message's stage should be tracked.
+	if len(stages.runningCalls) != 1 {
+		t.Errorf("MarkRunning calls = %d, want 1 (only from successful message)", len(stages.runningCalls))
 	}
 }
 
