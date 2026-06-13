@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -22,55 +21,37 @@ func NewPipelineRunRepo(pool *pgxpool.Pool, logger *slog.Logger) PipelineRunRepo
 }
 
 func (r *pipelineRunRepo) Create(ctx context.Context, run *domain.PipelineRun) (*domain.PipelineRun, error) {
-	paramsJSON, err := json.Marshal(run.RunParams)
-	if err != nil {
-		return nil, fmt.Errorf("pipelineRunRepo.Create: marshaling run_params: %w", err)
-	}
-
 	var created domain.PipelineRun
-	var paramsBytes []byte
-	err = r.pool.QueryRow(ctx, `
-		INSERT INTO pipeline_runs (run_params, sfn_execution_arn, status, ticker_count)
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO pipeline_runs (ticker_id, ticker, date, status)
 		VALUES ($1, $2, $3, $4)
-		RETURNING id, run_params, sfn_execution_arn, status, ticker_count,
-		          completed_count, failed_count, error_message,
-		          started_at, completed_at, created_at, updated_at`,
-		paramsJSON, run.SFNExecutionArn, run.Status, run.TickerCount).
-		Scan(&created.ID, &paramsBytes, &created.SFNExecutionArn,
-			&created.Status, &created.TickerCount, &created.CompletedCount,
-			&created.FailedCount, &created.ErrorMessage,
+		ON CONFLICT (ticker_id, date) DO UPDATE SET updated_at = NOW()
+		RETURNING id, ticker_id, ticker, date, sfn_execution_arn, status,
+		          error_message, started_at, completed_at, created_at, updated_at`,
+		run.TickerID, run.Ticker, run.Date, run.Status).
+		Scan(&created.ID, &created.TickerID, &created.Ticker, &created.Date,
+			&created.SFNExecutionArn, &created.Status, &created.ErrorMessage,
 			&created.StartedAt, &created.CompletedAt,
 			&created.CreatedAt, &created.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("pipelineRunRepo.Create: %w", err)
-	}
-
-	if err := json.Unmarshal(paramsBytes, &created.RunParams); err != nil {
-		return nil, fmt.Errorf("pipelineRunRepo.Create: unmarshaling run_params: %w", err)
 	}
 	return &created, nil
 }
 
 func (r *pipelineRunRepo) GetByID(ctx context.Context, id string) (*domain.PipelineRun, error) {
 	var run domain.PipelineRun
-	var paramsBytes []byte
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, run_params, sfn_execution_arn, status, ticker_count,
-		       completed_count, failed_count, error_message,
-		       started_at, completed_at, created_at, updated_at
+		SELECT id, ticker_id, ticker, date, sfn_execution_arn, status,
+		       error_message, started_at, completed_at, created_at, updated_at
 		FROM pipeline_runs
 		WHERE id = $1`, id).
-		Scan(&run.ID, &paramsBytes, &run.SFNExecutionArn,
-			&run.Status, &run.TickerCount, &run.CompletedCount,
-			&run.FailedCount, &run.ErrorMessage,
+		Scan(&run.ID, &run.TickerID, &run.Ticker, &run.Date,
+			&run.SFNExecutionArn, &run.Status, &run.ErrorMessage,
 			&run.StartedAt, &run.CompletedAt,
 			&run.CreatedAt, &run.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("pipelineRunRepo.GetByID: %w", err)
-	}
-
-	if err := json.Unmarshal(paramsBytes, &run.RunParams); err != nil {
-		return nil, fmt.Errorf("pipelineRunRepo.GetByID: unmarshaling run_params: %w", err)
 	}
 	return &run, nil
 }
@@ -87,38 +68,26 @@ func (r *pipelineRunRepo) UpdateStatus(ctx context.Context, id string, status st
 	return nil
 }
 
-func (r *pipelineRunRepo) UpdateCounts(ctx context.Context, id string) error {
+func (r *pipelineRunRepo) UpdateSFNArn(ctx context.Context, id, arn string) error {
 	_, err := r.pool.Exec(ctx, `
 		UPDATE pipeline_runs
-		SET completed_count = (
-				SELECT COUNT(DISTINCT ticker_id) FROM pipeline_ticker_stages
-				WHERE run_id = $1
-				AND ticker_id NOT IN (
-					SELECT ticker_id FROM pipeline_ticker_stages
-					WHERE run_id = $1 AND status <> 'completed'
-				)
-			),
-			failed_count = (
-				SELECT COUNT(DISTINCT ticker_id) FROM pipeline_ticker_stages
-				WHERE run_id = $1 AND status = 'failed'
-			),
-			updated_at = NOW()
-		WHERE id = $1`, id)
+		SET sfn_execution_arn = $1, updated_at = NOW()
+		WHERE id = $2`,
+		arn, id)
 	if err != nil {
-		return fmt.Errorf("pipelineRunRepo.UpdateCounts: %w", err)
+		return fmt.Errorf("pipelineRunRepo.UpdateSFNArn: %w", err)
 	}
 	return nil
 }
 
 func (r *pipelineRunRepo) MarkCompleted(ctx context.Context, id string) error {
-	if err := r.UpdateCounts(ctx, id); err != nil {
-		return fmt.Errorf("pipelineRunRepo.MarkCompleted: %w", err)
-	}
-
 	_, err := r.pool.Exec(ctx, `
 		UPDATE pipeline_runs
 		SET status = CASE
-				WHEN failed_count > 0 THEN 'failed'
+				WHEN EXISTS (
+					SELECT 1 FROM pipeline_ticker_stages
+					WHERE run_id = $1 AND status = 'failed'
+				) THEN 'failed'
 				ELSE 'completed'
 			END,
 			completed_at = NOW(),

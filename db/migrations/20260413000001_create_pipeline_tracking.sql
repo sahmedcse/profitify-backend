@@ -1,14 +1,13 @@
 -- +goose Up
 
--- pipeline_runs: one row per pipeline execution.
+-- pipeline_runs: one row per ticker per pipeline execution.
 CREATE TABLE pipeline_runs (
     id                UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    run_params        JSONB NOT NULL DEFAULT '{}',
+    ticker_id         UUID NOT NULL REFERENCES tickers(id) ON DELETE CASCADE,
+    ticker            TEXT NOT NULL,
+    date              DATE NOT NULL,
     sfn_execution_arn TEXT NOT NULL DEFAULT '',
     status            TEXT NOT NULL DEFAULT 'pending',
-    ticker_count      INT  NOT NULL DEFAULT 0,
-    completed_count   INT  NOT NULL DEFAULT 0,
-    failed_count      INT  NOT NULL DEFAULT 0,
     error_message     TEXT NOT NULL DEFAULT '',
     started_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at      TIMESTAMPTZ,
@@ -16,7 +15,7 @@ CREATE TABLE pipeline_runs (
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_pipeline_runs_date ON pipeline_runs ((run_params->>'date'));
+CREATE UNIQUE INDEX idx_pipeline_runs_ticker_date ON pipeline_runs (ticker_id, date);
 CREATE INDEX idx_pipeline_runs_status ON pipeline_runs (status);
 
 -- pipeline_ticker_stages: one row per ticker per stage per run.

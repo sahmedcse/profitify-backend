@@ -52,18 +52,24 @@ func LoadFetchTickers() (*FetchTickersConfig, error) {
 
 // StartPipelineConfig holds configuration for the start-pipeline Lambda.
 type StartPipelineConfig struct {
-	SFNArn string
+	DatabaseURL string
+	SFNArn      string
 }
 
 // LoadStartPipeline reads start-pipeline Lambda configuration.
 func LoadStartPipeline() (*StartPipelineConfig, error) {
+	dbURL, err := required("DATABASE_URL")
+	if err != nil {
+		return nil, err
+	}
 	sfnArn, err := required("SFN_ARN")
 	if err != nil {
 		return nil, err
 	}
 
 	return &StartPipelineConfig{
-		SFNArn: sfnArn,
+		DatabaseURL: dbURL,
+		SFNArn:      sfnArn,
 	}, nil
 }
 
