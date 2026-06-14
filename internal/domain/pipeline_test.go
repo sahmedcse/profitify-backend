@@ -7,13 +7,14 @@ import (
 )
 
 func TestAllStagesLength(t *testing.T) {
-	if got := len(domain.AllStages); got != 5 {
-		t.Errorf("AllStages length = %d, want 5", got)
+	if got := len(domain.AllStages); got != 6 {
+		t.Errorf("AllStages length = %d, want 6", got)
 	}
 }
 
 func TestAllStagesValues(t *testing.T) {
 	expected := []string{
+		domain.StageStartPipeline,
 		domain.StageIngestOHLCV,
 		domain.StageFetchTechnicals,
 		domain.StageFetchFundamentals,

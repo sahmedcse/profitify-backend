@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/profitify/profitify-backend/internal/domain"
@@ -21,38 +20,14 @@ func NewPipelineTickerStageRepo(pool *pgxpool.Pool, logger *slog.Logger) Pipelin
 	return &pipelineTickerStageRepo{pool: pool, logger: logger}
 }
 
-func (r *pipelineTickerStageRepo) BulkInsert(ctx context.Context, stages []domain.PipelineTickerStage) error {
-	if len(stages) == 0 {
-		return nil
-	}
-
-	batch := &pgx.Batch{}
-	const query = `
-		INSERT INTO pipeline_ticker_stages (run_id, ticker_id, ticker, stage, status)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (run_id, ticker_id, stage) DO NOTHING`
-
-	for _, s := range stages {
-		batch.Queue(query, s.RunID, s.TickerID, s.Ticker, s.Stage, s.Status)
-	}
-
-	br := r.pool.SendBatch(ctx, batch)
-	defer func() { _ = br.Close() }()
-
-	for i := 0; i < len(stages); i++ {
-		if _, err := br.Exec(); err != nil {
-			return fmt.Errorf("pipelineTickerStageRepo.BulkInsert: row %d: %w", i, err)
-		}
-	}
-	return nil
-}
-
 func (r *pipelineTickerStageRepo) MarkRunning(ctx context.Context, runID, tickerID, stage string) (string, error) {
 	var id string
 	err := r.pool.QueryRow(ctx, `
-		UPDATE pipeline_ticker_stages
-		SET status = 'running', started_at = NOW(), updated_at = NOW()
-		WHERE run_id = $1 AND ticker_id = $2 AND stage = $3
+		INSERT INTO pipeline_ticker_stages (run_id, ticker_id, ticker, stage, status, started_at, updated_at)
+		SELECT $1, $2, ticker, $3, 'running', NOW(), NOW()
+		FROM pipeline_runs WHERE id = $1
+		ON CONFLICT (run_id, ticker_id, stage)
+		DO UPDATE SET status = 'running', started_at = NOW(), updated_at = NOW()
 		RETURNING id`,
 		runID, tickerID, stage).Scan(&id)
 	if err != nil {
