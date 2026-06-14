@@ -1,4 +1,4 @@
-.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down build-lambda-enrich-ticker docker-lambda-enrich-ticker-up docker-lambda-enrich-ticker-invoke docker-lambda-enrich-ticker-down build-lambda-compute-stats docker-lambda-compute-stats-up docker-lambda-compute-stats-invoke docker-lambda-compute-stats-down build-lambda-start-pipeline docker-lambda-start-pipeline-up docker-lambda-start-pipeline-invoke docker-lambda-start-pipeline-down
+.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-localstack-up docker-localstack-down docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down build-lambda-enrich-ticker docker-lambda-enrich-ticker-up docker-lambda-enrich-ticker-invoke docker-lambda-enrich-ticker-down build-lambda-compute-stats docker-lambda-compute-stats-up docker-lambda-compute-stats-invoke docker-lambda-compute-stats-down build-lambda-start-pipeline docker-lambda-start-pipeline-up docker-lambda-start-pipeline-invoke docker-lambda-start-pipeline-down docker-pipeline-up docker-pipeline-down
 
 # Docker parameters
 DOCKER_COMPOSE=docker compose
@@ -146,10 +146,6 @@ docker-lambda-fetch-tickers-up:
 		echo "       Export it in your shell or add it to .env before running this target." >&2; \
 		exit 1; \
 	fi
-	@if [ -z "$$SQS_QUEUE_URL" ]; then \
-		echo "ERROR: SQS_QUEUE_URL must be set to run the FetchTickers Lambda locally." >&2; \
-		exit 1; \
-	fi
 	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-fetch-tickers
 
 ## docker-lambda-fetch-tickers-invoke: Invoke the local FetchTickers Lambda via the RIE
@@ -236,18 +232,46 @@ docker-lambda-compute-stats-invoke:
 docker-lambda-compute-stats-down:
 	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-compute-stats
 
+## docker-localstack-up: Start LocalStack (SQS + Step Functions)
+docker-localstack-up:
+	$(DOCKER_COMPOSE) --profile lambda up -d localstack
+	@echo "Waiting for LocalStack to be healthy..."
+	@until docker inspect --format='{{.State.Health.Status}}' profitify-localstack 2>/dev/null | grep -q healthy; do sleep 1; done
+	@echo "LocalStack is ready."
+
+## docker-localstack-down: Stop LocalStack
+docker-localstack-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf localstack
+
 ## docker-lambda-start-pipeline-up: Build and start StartPipeline Lambda locally (RIE on :9006)
 docker-lambda-start-pipeline-up:
-	@if [ -z "$$SFN_ARN" ]; then \
-		echo "ERROR: SFN_ARN must be set." >&2; \
-		exit 1; \
-	fi
 	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-start-pipeline
 
-## docker-lambda-start-pipeline-invoke: Invoke the local StartPipeline Lambda
+## docker-lambda-start-pipeline-invoke: Invoke the local StartPipeline Lambda with a sample SQS event
 docker-lambda-start-pipeline-invoke:
-	curl -sS -XPOST "http://localhost:9006/2015-03-31/functions/function/invocations" -d '{"Records":[{"messageId":"test-1","body":"{\"ticker\":\"AAPL\",\"id\":\"uuid\",\"date\":\"2026-06-12\"}"}]}' && echo
+	curl -sS -XPOST "http://localhost:9006/2015-03-31/functions/function/invocations" \
+		-d '{"Records":[{"messageId":"test-1","body":"{\"id\":\"test-uuid\",\"ticker\":\"AAPL\",\"name\":\"Apple Inc.\",\"date\":\"2026-06-14\"}"}]}' && echo
 
 ## docker-lambda-start-pipeline-down: Stop the local StartPipeline Lambda container
 docker-lambda-start-pipeline-down:
 	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-start-pipeline
+
+## docker-pipeline-up: Start DB + migrations + LocalStack + FetchTickers + StartPipeline
+docker-pipeline-up:
+	@if [ -z "$$MASSIVE_API_KEY" ]; then \
+		echo "ERROR: MASSIVE_API_KEY must be set." >&2; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) up -d db
+	$(DOCKER_COMPOSE) run --rm migrate
+	$(DOCKER_COMPOSE) --profile lambda up -d --build localstack lambda-fetch-tickers lambda-start-pipeline
+	@echo "Waiting for LocalStack to be healthy..."
+	@until docker inspect --format='{{.State.Health.Status}}' profitify-localstack 2>/dev/null | grep -q healthy; do sleep 1; done
+	@echo "Pipeline stack is ready."
+	@echo "  FetchTickers:    http://localhost:9000"
+	@echo "  StartPipeline:   http://localhost:9006"
+	@echo "  LocalStack:      http://localhost:4566"
+
+## docker-pipeline-down: Stop the full pipeline stack
+docker-pipeline-down:
+	$(DOCKER_COMPOSE) --profile lambda down

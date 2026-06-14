@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
@@ -158,8 +159,9 @@ func TestStartPipeline_HappyPath(t *testing.T) {
 	if runs.created.Ticker != "AAPL" {
 		t.Errorf("Ticker = %q, want %q", runs.created.Ticker, "AAPL")
 	}
-	if runs.created.Date != "2026-06-12" {
-		t.Errorf("Date = %q, want %q", runs.created.Date, "2026-06-12")
+	expectedDate := time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC)
+	if !runs.created.Date.Equal(expectedDate) {
+		t.Errorf("Date = %v, want %v", runs.created.Date, expectedDate)
 	}
 
 	// start_pipeline stage marked running then completed.

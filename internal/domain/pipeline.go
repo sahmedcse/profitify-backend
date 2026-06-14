@@ -36,7 +36,7 @@ type PipelineRun struct {
 	ID              string     `json:"id"`
 	TickerID        string     `json:"ticker_id"`
 	Ticker          string     `json:"ticker"`
-	Date            string     `json:"date"` // "2006-01-02" format
+	Date            time.Time  `json:"date"`
 	SFNExecutionArn string     `json:"sfn_execution_arn"`
 	Status          string     `json:"status"`
 	ErrorMessage    string     `json:"error_message"`

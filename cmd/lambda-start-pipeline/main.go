@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -84,11 +85,16 @@ func processTicker(
 	sfnArn string,
 	logger *slog.Logger,
 ) error {
-	// 1. Create pipeline run.
+	// 1. Parse date and create pipeline run.
+	parsedDate, err := time.Parse("2006-01-02", msg.Date)
+	if err != nil {
+		return fmt.Errorf("parsing date %q: %w", msg.Date, err)
+	}
+
 	run, err := runs.Create(ctx, &domain.PipelineRun{
 		TickerID: msg.Ticker.ID,
 		Ticker:   msg.Ticker.Ticker,
-		Date:     msg.Date,
+		Date:     parsedDate,
 		Status:   domain.PipelineStatusPending,
 	})
 	if err != nil {
