@@ -11,8 +11,9 @@ const (
 	PipelineStatusSkipped   = "skipped"
 )
 
-// Pipeline stage names — one per per-ticker Lambda.
+// Pipeline stage names — one per Lambda in the pipeline.
 const (
+	StageStartPipeline     = "start_pipeline"
 	StageIngestOHLCV       = "ingest_ohlcv"
 	StageFetchTechnicals   = "fetch_technicals"
 	StageFetchFundamentals = "fetch_fundamentals"
@@ -20,9 +21,9 @@ const (
 	StageComputeStats      = "compute_stats"
 )
 
-// AllStages is the ordered list of pipeline stages. Used by StartPipeline
-// to bulk-insert pending stage rows for a ticker.
+// AllStages is the ordered list of all pipeline stages.
 var AllStages = []string{
+	StageStartPipeline,
 	StageIngestOHLCV,
 	StageFetchTechnicals,
 	StageFetchFundamentals,

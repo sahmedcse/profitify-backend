@@ -63,7 +63,6 @@ type PipelineRunRepository interface {
 
 // PipelineTickerStageRepository persists and retrieves per-ticker stage records.
 type PipelineTickerStageRepository interface {
-	BulkInsert(ctx context.Context, stages []domain.PipelineTickerStage) error
 	MarkRunning(ctx context.Context, runID, tickerID, stage string) (string, error)
 	MarkCompleted(ctx context.Context, runID, tickerID, stage string) error
 	MarkFailed(ctx context.Context, runID, tickerID, stage, errorMessage string) error
