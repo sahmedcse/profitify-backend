@@ -349,7 +349,7 @@ func TestStartPipeline_BatchItemFailures(t *testing.T) {
 
 	msg1 := validMessage()
 	msg2 := validMessage()
-	msg2.Ticker.ID = "ticker-uuid-2"
+	msg2.ID = "ticker-uuid-2"
 	msg2.Ticker.Ticker = "MSFT"
 
 	event := makeSQSEvent(msg1, msg2)
