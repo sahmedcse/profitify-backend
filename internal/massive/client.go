@@ -1,14 +1,17 @@
 package massive
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"time"
 
 	massive "github.com/massive-com/client-go/v2/rest"
 	"github.com/massive-com/client-go/v2/rest/models"
+	v3gen "github.com/massive-com/client-go/v3/rest/gen"
 )
 
 const (
@@ -16,31 +19,69 @@ const (
 	defaultBaseDelay     = 2 * time.Second
 	defaultMaxDelay      = 30 * time.Second
 	defaultBackoffFactor = 2.0
+	massiveBaseURL       = "https://api.massive.com"
 )
 
 // sleepFunc is a function that pauses execution for the given duration.
 type sleepFunc func(time.Duration)
 
+// Option configures optional Client settings.
+type Option func(*Client)
+
 // Client wraps the Massive SDK client with retry logic for 429 and 5xx errors.
 type Client struct {
-	sdk        *massive.Client
+	sdk        *massive.Client            // v2 — used by indicators, dividends, aggregates, fundamentals
+	tickerSDK  *v3gen.ClientWithResponses // v3 — used by FetchActiveTickers (paginated)
 	logger     *slog.Logger
 	maxRetries int
+	maxTickers int // total ticker cap; 0 = no limit (production)
 	baseDelay  time.Duration
 	maxDelay   time.Duration
 	sleep      sleepFunc
 }
 
+// WithMaxTickers caps the total number of tickers fetched.
+// Use in development to avoid exhausting API rate limits.
+// 0 (default) means no limit — fetch all pages.
+func WithMaxTickers(n int) Option {
+	return func(c *Client) {
+		c.maxTickers = n
+	}
+}
+
+// httpError represents an HTTP error with a status code for retry logic.
+type httpError struct {
+	statusCode int
+	body       string
+}
+
+func (e *httpError) Error() string {
+	return fmt.Sprintf("HTTP %d: %s", e.statusCode, e.body)
+}
+
 // NewClient creates a new Massive client wrapper with default retry settings.
-func NewClient(apiKey string, logger *slog.Logger) *Client {
-	return &Client{
+func NewClient(apiKey string, logger *slog.Logger, opts ...Option) *Client {
+	v3Client, _ := v3gen.NewClientWithResponses(massiveBaseURL,
+		v3gen.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+			return nil
+		}),
+	)
+
+	c := &Client{
 		sdk:        massive.New(apiKey),
+		tickerSDK:  v3Client,
 		logger:     logger,
 		maxRetries: defaultMaxRetries,
+		maxTickers: 0, // no limit by default
 		baseDelay:  defaultBaseDelay,
 		maxDelay:   defaultMaxDelay,
 		sleep:      time.Sleep,
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // isRetryable checks if an error from the SDK is a retryable 429 or 5xx response.
@@ -49,6 +90,12 @@ func isRetryable(err error) (statusCode int, retryable bool) {
 	if errors.As(err, &errResp) {
 		if errResp.StatusCode == 429 || errResp.StatusCode >= 500 {
 			return errResp.StatusCode, true
+		}
+	}
+	var httpErr *httpError
+	if errors.As(err, &httpErr) {
+		if httpErr.statusCode == 429 || httpErr.statusCode >= 500 {
+			return httpErr.statusCode, true
 		}
 	}
 	return 0, false

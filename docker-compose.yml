@@ -28,15 +28,39 @@ services:
       - ./db/migrations:/migrations
     command: ["-dir", "/migrations", "postgres", "postgres://profitify:profitify@db:5432/profitify?sslmode=disable", "up"]
 
+  localstack:
+    image: localstack/localstack:4.4
+    container_name: profitify-localstack
+    profiles: ["lambda"]
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: sqs,stepfunctions
+    volumes:
+      - ./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal sqs list-queues"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
   lambda-fetch-tickers:
     build:
       context: .
       dockerfile: build/lambda-fetch-tickers.Dockerfile
     container_name: profitify-lambda-fetch-tickers
     profiles: ["lambda"]
+    depends_on:
+      localstack:
+        condition: service_healthy
     environment:
       MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
-      SQS_QUEUE_URL: ${SQS_QUEUE_URL:-}
+      SQS_QUEUE_URL: http://localstack:4566/000000000000/profitify-tickers
+      TICKER_LIMIT: "110"
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
       APP_ENV: development
     ports:
       - "9000:8080"
@@ -130,6 +154,30 @@ services:
       APP_ENV: development
     ports:
       - "9005:8080"
+
+  lambda-start-pipeline:
+    build:
+      context: .
+      dockerfile: build/lambda-start-pipeline.Dockerfile
+    container_name: profitify-lambda-start-pipeline
+    profiles: ["lambda"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      localstack:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
+      SFN_ARN: arn:aws:states:us-east-1:000000000000:stateMachine:profitify-pipeline
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      APP_ENV: development
+    ports:
+      - "9006:8080"
 
 volumes:
   profitify-db-data:
