@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	v3rest "github.com/massive-com/client-go/v3/rest"
@@ -13,7 +14,7 @@ import (
 )
 
 // FetchActiveTickers fetches active US equity tickers from Massive using the v3 SDK.
-// With v3 and no auto-pagination, a single API call returns up to maxTickers results.
+// It paginates through all pages using next_url.
 func (c *Client) FetchActiveTickers(ctx context.Context) ([]domain.Ticker, error) {
 	var tickers []domain.Ticker
 
@@ -28,36 +29,57 @@ func (c *Client) FetchActiveTickers(ctx context.Context) ([]domain.Ticker, error
 			Active: v3rest.Bool(true),
 			Sort:   v3rest.Ptr(v3gen.ListTickersParamsSortTicker),
 			Order:  v3rest.Ptr(v3gen.ListTickersParamsOrderAsc),
-			Limit:  v3rest.Int(c.maxTickers),
+			Limit:  v3rest.Int(c.tickerLimit),
 		}
 
-		resp, err := c.tickerSDK.ListTickersWithResponse(ctx, params)
-		if err != nil {
-			return fmt.Errorf("calling ListTickers: %w", err)
+		var nextURL *string
+
+		for {
+			var editors []v3gen.RequestEditorFn
+			if nextURL != nil {
+				editors = append(editors, followNextURL(*nextURL))
+			}
+
+			resp, err := c.tickerSDK.ListTickersWithResponse(ctx, params, editors...)
+			if err != nil {
+				return fmt.Errorf("calling ListTickers: %w", err)
+			}
+
+			if sc := resp.HTTPResponse.StatusCode; sc != http.StatusOK {
+				return &httpError{statusCode: sc, body: string(resp.Body)}
+			}
+
+			if resp.JSON200 == nil || resp.JSON200.Results == nil {
+				break
+			}
+
+			for _, t := range *resp.JSON200.Results {
+				tickers = append(tickers, domain.Ticker{
+					Ticker:          t.Ticker,
+					Name:            t.Name,
+					Market:          string(t.Market),
+					PrimaryExchange: derefStr(t.PrimaryExchange),
+					Type:            derefStr(t.Type),
+					Active:          derefBool(t.Active),
+					CurrencyName:    derefStr(t.CurrencyName),
+					Locale:          string(t.Locale),
+					CIK:             derefStr(t.Cik),
+					DelistedUTC:     formatTime(derefTime(t.DelistedUtc)),
+				})
+			}
+
+			c.logger.Info("fetched ticker page",
+				"page_count", len(*resp.JSON200.Results),
+				"total", len(tickers),
+			)
+
+			// Stop: no more pages
+			if resp.JSON200.NextUrl == nil {
+				break
+			}
+			nextURL = resp.JSON200.NextUrl
 		}
 
-		if sc := resp.HTTPResponse.StatusCode; sc != http.StatusOK {
-			return &httpError{statusCode: sc, body: string(resp.Body)}
-		}
-
-		if resp.JSON200 == nil || resp.JSON200.Results == nil {
-			return nil
-		}
-
-		for _, t := range *resp.JSON200.Results {
-			tickers = append(tickers, domain.Ticker{
-				Ticker:          t.Ticker,
-				Name:            t.Name,
-				Market:          string(t.Market),
-				PrimaryExchange: derefStr(t.PrimaryExchange),
-				Type:            derefStr(t.Type),
-				Active:          derefBool(t.Active),
-				CurrencyName:    derefStr(t.CurrencyName),
-				Locale:          string(t.Locale),
-				CIK:             derefStr(t.Cik),
-				DelistedUTC:     formatTime(derefTime(t.DelistedUtc)),
-			})
-		}
 		return nil
 	})
 	if err != nil {
@@ -66,6 +88,19 @@ func (c *Client) FetchActiveTickers(ctx context.Context) ([]domain.Ticker, error
 
 	c.logger.Info("fetched active tickers", "count", len(tickers))
 	return tickers, nil
+}
+
+// followNextURL returns a RequestEditorFn that overrides the request URL
+// with the API's next_url for pagination.
+func followNextURL(nextURL string) v3gen.RequestEditorFn {
+	return func(_ context.Context, req *http.Request) error {
+		parsed, err := url.Parse(nextURL)
+		if err != nil {
+			return fmt.Errorf("parsing next_url: %w", err)
+		}
+		req.URL = parsed
+		return nil
+	}
 }
 
 // derefStr safely dereferences a *string, returning "" for nil.

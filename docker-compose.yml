@@ -56,7 +56,7 @@ services:
     environment:
       MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
       SQS_QUEUE_URL: http://localstack:4566/000000000000/profitify-tickers
-      TICKER_LIMIT: "5"
+      TICKER_LIMIT: "110"
       AWS_ENDPOINT_URL: http://localstack:4566
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test

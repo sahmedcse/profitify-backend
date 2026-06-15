@@ -33,16 +33,16 @@ func newTestClient(ts *httptest.Server) *Client {
 	httpClient := &http.Client{
 		Transport: &testTransport{server: ts},
 	}
-	v3Client, _ := v3gen.NewClientWithResponses(ts.URL)
+	v3Client, _ := v3gen.NewClientWithResponses(ts.URL, v3gen.WithHTTPClient(httpClient))
 	return &Client{
-		sdk:        massive.NewWithClient("test-key", httpClient),
-		tickerSDK:  v3Client,
-		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-		maxRetries: 3,
-		baseDelay:  time.Millisecond,
-		maxDelay:   time.Millisecond,
-		sleep:      func(d time.Duration) {},
-		maxTickers: defaultMaxTickers,
+		sdk:         massive.NewWithClient("test-key", httpClient),
+		tickerSDK:   v3Client,
+		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		maxRetries:  3,
+		tickerLimit: defaultTickerLimit,
+		baseDelay:   time.Millisecond,
+		maxDelay:    time.Millisecond,
+		sleep:       func(d time.Duration) {},
 	}
 }
 
@@ -217,13 +217,13 @@ func TestFetchActiveTickers_EmptyResults(t *testing.T) {
 	}
 }
 
-func TestFetchActiveTickers_RespectsMaxTickers(t *testing.T) {
+func TestFetchActiveTickers_UsesPageLimit(t *testing.T) {
 	calls := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		limit := r.URL.Query().Get("limit")
-		if limit != "2" {
-			t.Errorf("expected limit=2 in query, got %q", limit)
+		if limit != "100" {
+			t.Errorf("expected limit=100 in query, got %q", limit)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -238,17 +238,68 @@ func TestFetchActiveTickers_RespectsMaxTickers(t *testing.T) {
 	defer ts.Close()
 
 	c := newTestClient(ts)
-	c.maxTickers = 2
 
 	tickers, err := c.FetchActiveTickers(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(tickers) != 2 {
-		t.Fatalf("expected 2 tickers with maxTickers=2, got %d", len(tickers))
+		t.Fatalf("expected 2 tickers, got %d", len(tickers))
 	}
 	if calls != 1 {
 		t.Errorf("expected exactly 1 API call, got %d", calls)
+	}
+}
+
+func TestFetchActiveTickers_Pagination(t *testing.T) {
+	calls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+
+		if calls == 1 {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status":     "OK",
+				"request_id": "test-page1",
+				"next_url":   "https://api.massive.com/v3/reference/tickers?cursor=page2",
+				"results": []map[string]any{
+					{"ticker": "AAPL", "name": "Apple Inc.", "market": "stocks", "locale": "us", "active": true},
+					{"ticker": "AMZN", "name": "Amazon.com Inc.", "market": "stocks", "locale": "us", "active": true},
+				},
+			})
+			return
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":     "OK",
+			"request_id": "test-page2",
+			"results": []map[string]any{
+				{"ticker": "GOOG", "name": "Alphabet Inc.", "market": "stocks", "locale": "us", "active": true},
+				{"ticker": "MSFT", "name": "Microsoft Corporation", "market": "stocks", "locale": "us", "active": true},
+			},
+		})
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+
+	tickers, err := c.FetchActiveTickers(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tickers) != 4 {
+		t.Fatalf("expected 4 tickers across 2 pages, got %d", len(tickers))
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 API calls, got %d", calls)
+	}
+
+	// Verify order preserved across pages
+	want := []string{"AAPL", "AMZN", "GOOG", "MSFT"}
+	for i, w := range want {
+		if tickers[i].Ticker != w {
+			t.Errorf("ticker[%d] = %q, want %q", i, tickers[i].Ticker, w)
+		}
 	}
 }
 
