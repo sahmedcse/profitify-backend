@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // Config holds API server configuration loaded from environment variables.
@@ -31,6 +32,7 @@ func Load() (*Config, error) {
 type FetchTickersConfig struct {
 	MassiveAPIKey string
 	SQSQueueURL   string
+	TickerLimit   int
 }
 
 // LoadFetchTickers reads fetch-tickers Lambda configuration.
@@ -47,6 +49,7 @@ func LoadFetchTickers() (*FetchTickersConfig, error) {
 	return &FetchTickersConfig{
 		MassiveAPIKey: apiKey,
 		SQSQueueURL:   sqsURL,
+		TickerLimit:   intOrDefault("TICKER_LIMIT", 1000),
 	}, nil
 }
 
@@ -194,6 +197,18 @@ func required(key string) (string, error) {
 		return "", fmt.Errorf("config: %s is required", key)
 	}
 	return v, nil
+}
+
+func intOrDefault(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
 }
 
 func envOrDefault(key, fallback string) string {
