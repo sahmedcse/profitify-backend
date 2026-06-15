@@ -19,7 +19,6 @@ const (
 	defaultBaseDelay     = 2 * time.Second
 	defaultMaxDelay      = 30 * time.Second
 	defaultBackoffFactor = 2.0
-	defaultTickerLimit   = 100
 	massiveBaseURL       = "https://api.massive.com"
 )
 
@@ -31,20 +30,22 @@ type Option func(*Client)
 
 // Client wraps the Massive SDK client with retry logic for 429 and 5xx errors.
 type Client struct {
-	sdk         *massive.Client            // v2 — used by indicators, dividends, aggregates, fundamentals
-	tickerSDK   *v3gen.ClientWithResponses // v3 — used by FetchActiveTickers (paginated)
-	logger      *slog.Logger
-	maxRetries  int
-	tickerLimit int
-	baseDelay   time.Duration
-	maxDelay    time.Duration
-	sleep       sleepFunc
+	sdk        *massive.Client            // v2 — used by indicators, dividends, aggregates, fundamentals
+	tickerSDK  *v3gen.ClientWithResponses // v3 — used by FetchActiveTickers (paginated)
+	logger     *slog.Logger
+	maxRetries int
+	maxTickers int // total ticker cap; 0 = no limit (production)
+	baseDelay  time.Duration
+	maxDelay   time.Duration
+	sleep      sleepFunc
 }
 
-// WithTickerLimit sets the page size for ListTickers API requests.
-func WithTickerLimit(n int) Option {
+// WithMaxTickers caps the total number of tickers fetched.
+// Use in development to avoid exhausting API rate limits.
+// 0 (default) means no limit — fetch all pages.
+func WithMaxTickers(n int) Option {
 	return func(c *Client) {
-		c.tickerLimit = n
+		c.maxTickers = n
 	}
 }
 
@@ -68,14 +69,14 @@ func NewClient(apiKey string, logger *slog.Logger, opts ...Option) *Client {
 	)
 
 	c := &Client{
-		sdk:         massive.New(apiKey),
-		tickerSDK:   v3Client,
-		logger:      logger,
-		maxRetries:  defaultMaxRetries,
-		tickerLimit: defaultTickerLimit,
-		baseDelay:   defaultBaseDelay,
-		maxDelay:    defaultMaxDelay,
-		sleep:       time.Sleep,
+		sdk:        massive.New(apiKey),
+		tickerSDK:  v3Client,
+		logger:     logger,
+		maxRetries: defaultMaxRetries,
+		maxTickers: 0, // no limit by default
+		baseDelay:  defaultBaseDelay,
+		maxDelay:   defaultMaxDelay,
+		sleep:      time.Sleep,
 	}
 	for _, opt := range opts {
 		opt(c)

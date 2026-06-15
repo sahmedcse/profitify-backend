@@ -35,14 +35,13 @@ func newTestClient(ts *httptest.Server) *Client {
 	}
 	v3Client, _ := v3gen.NewClientWithResponses(ts.URL, v3gen.WithHTTPClient(httpClient))
 	return &Client{
-		sdk:         massive.NewWithClient("test-key", httpClient),
-		tickerSDK:   v3Client,
-		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-		maxRetries:  3,
-		tickerLimit: defaultTickerLimit,
-		baseDelay:   time.Millisecond,
-		maxDelay:    time.Millisecond,
-		sleep:       func(d time.Duration) {},
+		sdk:        massive.NewWithClient("test-key", httpClient),
+		tickerSDK:  v3Client,
+		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		maxRetries: 3,
+		baseDelay:  time.Millisecond,
+		maxDelay:   time.Millisecond,
+		sleep:      func(d time.Duration) {},
 	}
 }
 
@@ -300,6 +299,52 @@ func TestFetchActiveTickers_Pagination(t *testing.T) {
 		if tickers[i].Ticker != w {
 			t.Errorf("ticker[%d] = %q, want %q", i, tickers[i].Ticker, w)
 		}
+	}
+}
+
+func TestFetchActiveTickers_MaxTickersStopsPagination(t *testing.T) {
+	calls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+
+		if calls == 1 {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status":     "OK",
+				"request_id": "test-page1",
+				"next_url":   "https://api.massive.com/v3/reference/tickers?cursor=page2",
+				"results": []map[string]any{
+					{"ticker": "AAPL", "name": "Apple Inc.", "market": "stocks", "locale": "us", "active": true},
+					{"ticker": "AMZN", "name": "Amazon.com Inc.", "market": "stocks", "locale": "us", "active": true},
+					{"ticker": "GOOG", "name": "Alphabet Inc.", "market": "stocks", "locale": "us", "active": true},
+				},
+			})
+			return
+		}
+
+		// Should NOT be reached — maxTickers=3 met on first page
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":     "OK",
+			"request_id": "test-page2",
+			"results": []map[string]any{
+				{"ticker": "MSFT", "name": "Microsoft Corporation", "market": "stocks", "locale": "us", "active": true},
+			},
+		})
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	c.maxTickers = 3
+
+	tickers, err := c.FetchActiveTickers(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tickers) != 3 {
+		t.Fatalf("expected 3 tickers (maxTickers=3), got %d", len(tickers))
+	}
+	if calls != 1 {
+		t.Errorf("expected 1 API call (maxTickers met on first page), got %d", calls)
 	}
 }
 

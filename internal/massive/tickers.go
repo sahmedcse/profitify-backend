@@ -29,7 +29,7 @@ func (c *Client) FetchActiveTickers(ctx context.Context) ([]domain.Ticker, error
 			Active: v3rest.Bool(true),
 			Sort:   v3rest.Ptr(v3gen.ListTickersParamsSortTicker),
 			Order:  v3rest.Ptr(v3gen.ListTickersParamsOrderAsc),
-			Limit:  v3rest.Int(c.tickerLimit),
+			Limit:  v3rest.Int(100),
 		}
 
 		var nextURL *string
@@ -73,8 +73,8 @@ func (c *Client) FetchActiveTickers(ctx context.Context) ([]domain.Ticker, error
 				"total", len(tickers),
 			)
 
-			// Stop: no more pages
-			if resp.JSON200.NextUrl == nil {
+			// Stop: no more pages or reached dev limit
+			if resp.JSON200.NextUrl == nil || (c.maxTickers > 0 && len(tickers) >= c.maxTickers) {
 				break
 			}
 			nextURL = resp.JSON200.NextUrl

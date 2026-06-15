@@ -83,7 +83,7 @@ func handleRequest(ctx context.Context, event Event) (*Response, error) {
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
 
-	client := massive.NewClient(cfg.MassiveAPIKey, logger, massive.WithTickerLimit(cfg.TickerLimit))
+	client := massive.NewClient(cfg.MassiveAPIKey, logger, massive.WithMaxTickers(cfg.TickerLimit))
 
 	pub, err := queue.NewPublisher(ctx, cfg.SQSQueueURL)
 	if err != nil {

@@ -49,7 +49,7 @@ func LoadFetchTickers() (*FetchTickersConfig, error) {
 	return &FetchTickersConfig{
 		MassiveAPIKey: apiKey,
 		SQSQueueURL:   sqsURL,
-		TickerLimit:   intOrDefault("TICKER_LIMIT", 100),
+		TickerLimit:   intOrDefault("TICKER_LIMIT", 0),
 	}, nil
 }
 
