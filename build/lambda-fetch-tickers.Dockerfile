@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Build stage: compile the Lambda handler as a static linux binary.
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 WORKDIR /src
 
 COPY go.mod go.sum ./

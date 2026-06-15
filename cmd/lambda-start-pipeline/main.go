@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -84,11 +85,16 @@ func processTicker(
 	sfnArn string,
 	logger *slog.Logger,
 ) error {
-	// 1. Create pipeline run.
+	// 1. Parse date and create pipeline run.
+	parsedDate, err := time.Parse("2006-01-02", msg.Date)
+	if err != nil {
+		return fmt.Errorf("parsing date %q: %w", msg.Date, err)
+	}
+
 	run, err := runs.Create(ctx, &domain.PipelineRun{
-		TickerID: msg.Ticker.ID,
+		TickerID: msg.ID,
 		Ticker:   msg.Ticker.Ticker,
-		Date:     msg.Date,
+		Date:     parsedDate,
 		Status:   domain.PipelineStatusPending,
 	})
 	if err != nil {
@@ -98,7 +104,7 @@ func processTicker(
 	logger.Info("pipeline run created", "runId", run.ID, "ticker", msg.Ticker.Ticker)
 
 	// 2. Track start_pipeline stage.
-	st := pipeline.NewStageTracker(stages, run.ID, msg.Ticker.ID, domain.StageStartPipeline, logger)
+	st := pipeline.NewStageTracker(stages, run.ID, msg.ID, domain.StageStartPipeline, logger)
 	if err := st.Begin(ctx); err != nil {
 		_ = runs.UpdateStatus(ctx, run.ID, domain.PipelineStatusFailed, err.Error())
 		return fmt.Errorf("tracking start_pipeline stage: %w", err)
@@ -107,7 +113,7 @@ func processTicker(
 	// 3. Start Step Function execution.
 	tickerEvent := pipeline.TickerEvent{
 		Ticker:   msg.Ticker.Ticker,
-		TickerID: msg.Ticker.ID,
+		TickerID: msg.ID,
 		Date:     msg.Date,
 		RunID:    run.ID,
 	}

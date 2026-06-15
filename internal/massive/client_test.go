@@ -15,10 +15,10 @@ var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func TestIsRetryable(t *testing.T) {
 	tests := []struct {
-		name       string
-		err        error
-		wantCode   int
-		wantRetry  bool
+		name      string
+		err       error
+		wantCode  int
+		wantRetry bool
 	}{
 		{
 			name:      "429 is retryable",
