@@ -12,7 +12,7 @@ import (
 	"time"
 
 	massive "github.com/massive-com/client-go/v2/rest"
-	"github.com/massive-com/client-go/v2/rest/models"
+	v3gen "github.com/massive-com/client-go/v3/rest/gen"
 )
 
 // testTransport redirects SDK requests to a local test server.
@@ -33,13 +33,16 @@ func newTestClient(ts *httptest.Server) *Client {
 	httpClient := &http.Client{
 		Transport: &testTransport{server: ts},
 	}
+	v3Client, _ := v3gen.NewClientWithResponses(ts.URL)
 	return &Client{
 		sdk:        massive.NewWithClient("test-key", httpClient),
+		tickerSDK:  v3Client,
 		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		maxRetries: 3,
 		baseDelay:  time.Millisecond,
 		maxDelay:   time.Millisecond,
 		sleep:      func(d time.Duration) {},
+		maxTickers: defaultMaxTickers,
 	}
 }
 
@@ -80,72 +83,40 @@ func TestFormatTime(t *testing.T) {
 	}
 }
 
-func TestMapTicker(t *testing.T) {
-	sdkTicker := models.Ticker{
-		Ticker:          "AAPL",
-		Name:            "Apple Inc.",
-		Market:          "stocks",
-		PrimaryExchange: "XNAS",
-		Type:            "CS",
-		Active:          true,
-		CurrencyName:    "usd",
-		Locale:          "us",
-		CIK:             "0000320193",
-		ListDate:        models.Date(time.Date(1980, 12, 12, 0, 0, 0, 0, time.UTC)),
-	}
-
-	got := mapTicker(sdkTicker)
-
-	if got.Ticker != "AAPL" {
-		t.Errorf("Ticker = %q, want %q", got.Ticker, "AAPL")
-	}
-	if got.Name != "Apple Inc." {
-		t.Errorf("Name = %q, want %q", got.Name, "Apple Inc.")
-	}
-	if got.Market != "stocks" {
-		t.Errorf("Market = %q, want %q", got.Market, "stocks")
-	}
-	if got.PrimaryExchange != "XNAS" {
-		t.Errorf("PrimaryExchange = %q, want %q", got.PrimaryExchange, "XNAS")
-	}
-	if got.Type != "CS" {
-		t.Errorf("Type = %q, want %q", got.Type, "CS")
-	}
-	if !got.Active {
-		t.Error("Active = false, want true")
-	}
-	if got.CurrencyName != "usd" {
-		t.Errorf("CurrencyName = %q, want %q", got.CurrencyName, "usd")
-	}
-	if got.Locale != "us" {
-		t.Errorf("Locale = %q, want %q", got.Locale, "us")
-	}
-	if got.CIK != "0000320193" {
-		t.Errorf("CIK = %q, want %q", got.CIK, "0000320193")
-	}
-	if got.ListDate != "1980-12-12" {
-		t.Errorf("ListDate = %q, want %q", got.ListDate, "1980-12-12")
-	}
-	if got.DelistedUTC != "" {
-		t.Errorf("DelistedUTC = %q, want empty", got.DelistedUTC)
-	}
-}
-
-func TestMapTicker_ZeroDates(t *testing.T) {
-	sdkTicker := models.Ticker{
-		Ticker: "TEST",
-		Name:   "Test Corp",
-		Active: true,
-	}
-
-	got := mapTicker(sdkTicker)
-
-	if got.ListDate != "" {
-		t.Errorf("ListDate = %q, want empty for zero value", got.ListDate)
-	}
-	if got.DelistedUTC != "" {
-		t.Errorf("DelistedUTC = %q, want empty for zero value", got.DelistedUTC)
-	}
+func TestDerefHelpers(t *testing.T) {
+	t.Run("derefStr nil returns empty", func(t *testing.T) {
+		if got := derefStr(nil); got != "" {
+			t.Errorf("derefStr(nil) = %q, want empty", got)
+		}
+	})
+	t.Run("derefStr non-nil", func(t *testing.T) {
+		s := "hello"
+		if got := derefStr(&s); got != "hello" {
+			t.Errorf("derefStr(&s) = %q, want %q", got, "hello")
+		}
+	})
+	t.Run("derefBool nil returns false", func(t *testing.T) {
+		if got := derefBool(nil); got {
+			t.Error("derefBool(nil) = true, want false")
+		}
+	})
+	t.Run("derefBool non-nil", func(t *testing.T) {
+		b := true
+		if got := derefBool(&b); !got {
+			t.Error("derefBool(&true) = false, want true")
+		}
+	})
+	t.Run("derefTime nil returns zero", func(t *testing.T) {
+		if got := derefTime(nil); !got.IsZero() {
+			t.Errorf("derefTime(nil) = %v, want zero", got)
+		}
+	})
+	t.Run("derefTime non-nil", func(t *testing.T) {
+		tm := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		if got := derefTime(&tm); got != tm {
+			t.Errorf("derefTime(&tm) = %v, want %v", got, tm)
+		}
+	})
 }
 
 func TestFetchActiveTickers_Success(t *testing.T) {
@@ -159,17 +130,18 @@ func TestFetchActiveTickers_Success(t *testing.T) {
 					"ticker":           "AAPL",
 					"name":             "Apple Inc.",
 					"market":           "stocks",
-					"primary_exchange":  "XNAS",
+					"primary_exchange": "XNAS",
 					"type":             "CS",
 					"active":           true,
 					"currency_name":    "usd",
 					"locale":           "us",
+					"cik":              "0000320193",
 				},
 				{
 					"ticker":           "MSFT",
 					"name":             "Microsoft Corporation",
 					"market":           "stocks",
-					"primary_exchange":  "XNAS",
+					"primary_exchange": "XNAS",
 					"type":             "CS",
 					"active":           true,
 					"currency_name":    "usd",
@@ -188,9 +160,37 @@ func TestFetchActiveTickers_Success(t *testing.T) {
 	if len(tickers) != 2 {
 		t.Fatalf("expected 2 tickers, got %d", len(tickers))
 	}
+
+	// Verify first ticker fields
 	if tickers[0].Ticker != "AAPL" {
 		t.Errorf("first ticker = %q, want %q", tickers[0].Ticker, "AAPL")
 	}
+	if tickers[0].Name != "Apple Inc." {
+		t.Errorf("first name = %q, want %q", tickers[0].Name, "Apple Inc.")
+	}
+	if tickers[0].Market != "stocks" {
+		t.Errorf("first market = %q, want %q", tickers[0].Market, "stocks")
+	}
+	if tickers[0].PrimaryExchange != "XNAS" {
+		t.Errorf("first exchange = %q, want %q", tickers[0].PrimaryExchange, "XNAS")
+	}
+	if tickers[0].Type != "CS" {
+		t.Errorf("first type = %q, want %q", tickers[0].Type, "CS")
+	}
+	if !tickers[0].Active {
+		t.Error("first Active = false, want true")
+	}
+	if tickers[0].CurrencyName != "usd" {
+		t.Errorf("first currency = %q, want %q", tickers[0].CurrencyName, "usd")
+	}
+	if tickers[0].Locale != "us" {
+		t.Errorf("first locale = %q, want %q", tickers[0].Locale, "us")
+	}
+	if tickers[0].CIK != "0000320193" {
+		t.Errorf("first CIK = %q, want %q", tickers[0].CIK, "0000320193")
+	}
+
+	// Verify second ticker
 	if tickers[1].Ticker != "MSFT" {
 		t.Errorf("second ticker = %q, want %q", tickers[1].Ticker, "MSFT")
 	}
@@ -217,6 +217,41 @@ func TestFetchActiveTickers_EmptyResults(t *testing.T) {
 	}
 }
 
+func TestFetchActiveTickers_RespectsMaxTickers(t *testing.T) {
+	calls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		limit := r.URL.Query().Get("limit")
+		if limit != "2" {
+			t.Errorf("expected limit=2 in query, got %q", limit)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":     "OK",
+			"request_id": "test-123",
+			"results": []map[string]any{
+				{"ticker": "AAPL", "name": "Apple Inc.", "market": "stocks", "locale": "us", "active": true},
+				{"ticker": "MSFT", "name": "Microsoft Corporation", "market": "stocks", "locale": "us", "active": true},
+			},
+		})
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	c.maxTickers = 2
+
+	tickers, err := c.FetchActiveTickers(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tickers) != 2 {
+		t.Fatalf("expected 2 tickers with maxTickers=2, got %d", len(tickers))
+	}
+	if calls != 1 {
+		t.Errorf("expected exactly 1 API call, got %d", calls)
+	}
+}
+
 func TestFetchActiveTickers_RetriesOn429(t *testing.T) {
 	calls := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -239,6 +274,7 @@ func TestFetchActiveTickers_RetriesOn429(t *testing.T) {
 					"ticker": "AAPL",
 					"name":   "Apple Inc.",
 					"market": "stocks",
+					"locale": "us",
 					"active": true,
 				},
 			},
@@ -256,5 +292,25 @@ func TestFetchActiveTickers_RetriesOn429(t *testing.T) {
 	}
 	if calls < 2 {
 		t.Errorf("expected at least 2 API calls (retry on 429), got %d", calls)
+	}
+}
+
+func TestFetchActiveTickers_NilResultsField(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":     "OK",
+			"request_id": "test-123",
+		})
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	tickers, err := c.FetchActiveTickers(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tickers) != 0 {
+		t.Errorf("expected 0 tickers for nil results, got %d", len(tickers))
 	}
 }
