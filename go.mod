@@ -1,6 +1,6 @@
 module github.com/profitify/profitify-backend
 
-go 1.24
+go 1.25.7
 
 require (
 	github.com/aws/aws-lambda-go v1.47.0
@@ -8,10 +8,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.43.0
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.44.0
 	github.com/go-chi/chi/v5 v5.2.1
-	github.com/jackc/pgx/v5 v5.7.4
+	github.com/jackc/pgx/v5 v5.10.0
 	github.com/massive-com/client-go/v2 v2.0.0
 	github.com/massive-com/client-go/v3 v3.3.0
-	github.com/pressly/goose/v3 v3.24.1
+	github.com/pressly/goose/v3 v3.27.2
 )
 
 require (
@@ -44,9 +44,9 @@ require (
 	github.com/oapi-codegen/runtime v1.2.0 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.32.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 )
