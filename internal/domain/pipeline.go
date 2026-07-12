@@ -19,6 +19,7 @@ const (
 	StageFetchFundamentals = "fetch_fundamentals"
 	StageEnrichTicker      = "enrich_ticker"
 	StageComputeStats      = "compute_stats"
+	StageClosePipeline     = "close_pipeline"
 )
 
 // AllStages is the ordered list of all pipeline stages.
@@ -29,6 +30,7 @@ var AllStages = []string{
 	StageFetchFundamentals,
 	StageEnrichTicker,
 	StageComputeStats,
+	StageClosePipeline,
 }
 
 // PipelineRun represents a single per-ticker execution of the enrichment pipeline.

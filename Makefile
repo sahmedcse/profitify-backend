@@ -1,4 +1,4 @@
-.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-localstack-up docker-localstack-down docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down build-lambda-enrich-ticker docker-lambda-enrich-ticker-up docker-lambda-enrich-ticker-invoke docker-lambda-enrich-ticker-down build-lambda-compute-stats docker-lambda-compute-stats-up docker-lambda-compute-stats-invoke docker-lambda-compute-stats-down build-lambda-start-pipeline docker-lambda-start-pipeline-up docker-lambda-start-pipeline-invoke docker-lambda-start-pipeline-down docker-pipeline-up docker-pipeline-down
+.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-localstack-up docker-localstack-down docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down build-lambda-enrich-ticker docker-lambda-enrich-ticker-up docker-lambda-enrich-ticker-invoke docker-lambda-enrich-ticker-down build-lambda-compute-stats docker-lambda-compute-stats-up docker-lambda-compute-stats-invoke docker-lambda-compute-stats-down build-lambda-start-pipeline docker-lambda-start-pipeline-up docker-lambda-start-pipeline-invoke docker-lambda-start-pipeline-down build-lambda-close-pipeline docker-lambda-close-pipeline-up docker-lambda-close-pipeline-invoke docker-lambda-close-pipeline-down docker-pipeline-up docker-pipeline-down
 
 # Docker parameters
 DOCKER_COMPOSE=docker compose
@@ -57,8 +57,12 @@ build-lambda-compute-stats:
 build-lambda-start-pipeline:
 	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-start-pipeline/bootstrap ./cmd/lambda-start-pipeline
 
+## build-lambda-close-pipeline: Build ClosePipeline Lambda (linux/arm64)
+build-lambda-close-pipeline:
+	GOOS=linux GOARCH=arm64 $(GOBUILD) -tags lambda.norpc -o $(BINARY_DIR)/lambda-close-pipeline/bootstrap ./cmd/lambda-close-pipeline
+
 ## build-lambdas: Build all Lambda functions (linux/arm64 for Graviton2)
-build-lambdas: build-lambda-fetch-tickers build-lambda-ingest-ohlcv build-lambda-fetch-technicals build-lambda-fetch-fundamentals build-lambda-enrich-ticker build-lambda-compute-stats build-lambda-start-pipeline
+build-lambdas: build-lambda-fetch-tickers build-lambda-ingest-ohlcv build-lambda-fetch-technicals build-lambda-fetch-fundamentals build-lambda-enrich-ticker build-lambda-compute-stats build-lambda-start-pipeline build-lambda-close-pipeline
 
 ## lint: Run golangci-lint
 lint:
@@ -255,6 +259,18 @@ docker-lambda-start-pipeline-invoke:
 ## docker-lambda-start-pipeline-down: Stop the local StartPipeline Lambda container
 docker-lambda-start-pipeline-down:
 	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-start-pipeline
+
+## docker-lambda-close-pipeline-up: Build and start ClosePipeline Lambda locally (RIE on :9007)
+docker-lambda-close-pipeline-up:
+	$(DOCKER_COMPOSE) --profile lambda up -d --build lambda-close-pipeline
+
+## docker-lambda-close-pipeline-invoke: Invoke the local ClosePipeline Lambda
+docker-lambda-close-pipeline-invoke:
+	curl -sS -XPOST "http://localhost:9007/2015-03-31/functions/function/invocations" -d '{"ticker":"AAPL","ticker_id":"","date":"2026-04-08","run_id":""}' && echo
+
+## docker-lambda-close-pipeline-down: Stop the local ClosePipeline Lambda container
+docker-lambda-close-pipeline-down:
+	$(DOCKER_COMPOSE) --profile lambda rm -sf lambda-close-pipeline
 
 ## docker-pipeline-up: Start DB + migrations + LocalStack + FetchTickers + StartPipeline
 docker-pipeline-up:
