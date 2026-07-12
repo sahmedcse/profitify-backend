@@ -191,6 +191,23 @@ func LoadComputeStats() (*ComputeStatsConfig, error) {
 	}, nil
 }
 
+// ClosePipelineConfig holds configuration for the close-pipeline Lambda.
+type ClosePipelineConfig struct {
+	DatabaseURL string
+}
+
+// LoadClosePipeline reads close-pipeline Lambda configuration.
+func LoadClosePipeline() (*ClosePipelineConfig, error) {
+	dbURL, err := required("DATABASE_URL")
+	if err != nil {
+		return nil, err
+	}
+
+	return &ClosePipelineConfig{
+		DatabaseURL: dbURL,
+	}, nil
+}
+
 func required(key string) (string, error) {
 	v := os.Getenv(key)
 	if v == "" {

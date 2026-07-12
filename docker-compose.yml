@@ -179,5 +179,22 @@ services:
     ports:
       - "9006:8080"
 
+  lambda-close-pipeline:
+    build:
+      context: .
+      dockerfile: build/lambda-close-pipeline.Dockerfile
+    container_name: profitify-lambda-close-pipeline
+    profiles: ["lambda"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://profitify:profitify@db:5432/profitify?sslmode=disable
+      APP_ENV: development
+    ports:
+      - "9007:8080"
+
 volumes:
   profitify-db-data:
