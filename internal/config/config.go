@@ -8,9 +8,10 @@ import (
 
 // Config holds API server configuration loaded from environment variables.
 type Config struct {
-	DatabaseURL string
-	APIPort     string
-	AppEnv      string // "development", "staging", "production"
+	DatabaseURL  string
+	APIPort      string
+	AppEnv       string // "development", "staging", "production"
+	PoolMaxConns int
 }
 
 // Load reads API server configuration from environment variables.
@@ -22,9 +23,10 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		DatabaseURL: dbURL,
-		APIPort:     envOrDefault("API_PORT", "8080"),
-		AppEnv:      envOrDefault("APP_ENV", "development"),
+		DatabaseURL:  dbURL,
+		APIPort:      envOrDefault("API_PORT", "8080"),
+		AppEnv:       envOrDefault("APP_ENV", "development"),
+		PoolMaxConns: intOrDefault("DB_POOL_MAX_CONNS", 4),
 	}, nil
 }
 
@@ -55,8 +57,9 @@ func LoadFetchTickers() (*FetchTickersConfig, error) {
 
 // StartPipelineConfig holds configuration for the start-pipeline Lambda.
 type StartPipelineConfig struct {
-	DatabaseURL string
-	SFNArn      string
+	DatabaseURL  string
+	SFNArn       string
+	PoolMaxConns int
 }
 
 // LoadStartPipeline reads start-pipeline Lambda configuration.
@@ -71,8 +74,9 @@ func LoadStartPipeline() (*StartPipelineConfig, error) {
 	}
 
 	return &StartPipelineConfig{
-		DatabaseURL: dbURL,
-		SFNArn:      sfnArn,
+		DatabaseURL:  dbURL,
+		SFNArn:       sfnArn,
+		PoolMaxConns: intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
@@ -80,6 +84,7 @@ func LoadStartPipeline() (*StartPipelineConfig, error) {
 type IngestOHLCVConfig struct {
 	DatabaseURL   string
 	MassiveAPIKey string
+	PoolMaxConns  int
 }
 
 // LoadIngestOHLCV reads ingest-ohlcv Lambda configuration.
@@ -96,6 +101,7 @@ func LoadIngestOHLCV() (*IngestOHLCVConfig, error) {
 	return &IngestOHLCVConfig{
 		DatabaseURL:   dbURL,
 		MassiveAPIKey: apiKey,
+		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
@@ -103,6 +109,7 @@ func LoadIngestOHLCV() (*IngestOHLCVConfig, error) {
 type FetchTechnicalsConfig struct {
 	DatabaseURL   string
 	MassiveAPIKey string
+	PoolMaxConns  int
 }
 
 // LoadFetchTechnicals reads fetch-technicals Lambda configuration.
@@ -119,6 +126,7 @@ func LoadFetchTechnicals() (*FetchTechnicalsConfig, error) {
 	return &FetchTechnicalsConfig{
 		DatabaseURL:   dbURL,
 		MassiveAPIKey: apiKey,
+		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
@@ -126,6 +134,7 @@ func LoadFetchTechnicals() (*FetchTechnicalsConfig, error) {
 type FetchFundamentalsConfig struct {
 	DatabaseURL   string
 	MassiveAPIKey string
+	PoolMaxConns  int
 }
 
 // LoadFetchFundamentals reads fetch-fundamentals Lambda configuration.
@@ -142,6 +151,7 @@ func LoadFetchFundamentals() (*FetchFundamentalsConfig, error) {
 	return &FetchFundamentalsConfig{
 		DatabaseURL:   dbURL,
 		MassiveAPIKey: apiKey,
+		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
@@ -149,6 +159,7 @@ func LoadFetchFundamentals() (*FetchFundamentalsConfig, error) {
 type EnrichTickerConfig struct {
 	DatabaseURL   string
 	MassiveAPIKey string
+	PoolMaxConns  int
 }
 
 // LoadEnrichTicker reads enrich-ticker Lambda configuration.
@@ -165,6 +176,7 @@ func LoadEnrichTicker() (*EnrichTickerConfig, error) {
 	return &EnrichTickerConfig{
 		DatabaseURL:   dbURL,
 		MassiveAPIKey: apiKey,
+		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
@@ -172,6 +184,7 @@ func LoadEnrichTicker() (*EnrichTickerConfig, error) {
 type ComputeStatsConfig struct {
 	DatabaseURL   string
 	MassiveAPIKey string
+	PoolMaxConns  int
 }
 
 // LoadComputeStats reads compute-stats Lambda configuration.
@@ -188,12 +201,14 @@ func LoadComputeStats() (*ComputeStatsConfig, error) {
 	return &ComputeStatsConfig{
 		DatabaseURL:   dbURL,
 		MassiveAPIKey: apiKey,
+		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
 // ClosePipelineConfig holds configuration for the close-pipeline Lambda.
 type ClosePipelineConfig struct {
-	DatabaseURL string
+	DatabaseURL  string
+	PoolMaxConns int
 }
 
 // LoadClosePipeline reads close-pipeline Lambda configuration.
@@ -204,7 +219,8 @@ func LoadClosePipeline() (*ClosePipelineConfig, error) {
 	}
 
 	return &ClosePipelineConfig{
-		DatabaseURL: dbURL,
+		DatabaseURL:  dbURL,
+		PoolMaxConns: intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
