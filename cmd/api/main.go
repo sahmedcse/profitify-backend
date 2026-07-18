@@ -29,7 +29,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pool, err := db.New(ctx, cfg.DatabaseURL)
+	pool, err := db.New(ctx, cfg.DatabaseURL, db.WithMaxConns(int32(cfg.PoolMaxConns)))
 	if err != nil {
 		logger.Error("failed to connect to database", slog.String("error", err.Error()))
 		os.Exit(1)

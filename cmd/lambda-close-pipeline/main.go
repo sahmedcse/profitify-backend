@@ -86,7 +86,7 @@ func handleRequest(ctx context.Context, event pipeline.TickerEvent) (*Response, 
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
 
-	pool, err := db.New(ctx, cfg.DatabaseURL)
+	pool, err := db.New(ctx, cfg.DatabaseURL, db.WithMaxConns(int32(cfg.PoolMaxConns)))
 	if err != nil {
 		return nil, fmt.Errorf("connecting to database: %w", err)
 	}
