@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds API server configuration loaded from environment variables.
@@ -32,9 +33,10 @@ func Load() (*Config, error) {
 
 // FetchTickersConfig holds configuration for the fetch-tickers Lambda.
 type FetchTickersConfig struct {
-	MassiveAPIKey string
-	SQSQueueURL   string
-	TickerLimit   int
+	MassiveAPIKey   string
+	SQSQueueURL     string
+	TickerLimit     int
+	TickerAllowlist []string
 }
 
 // LoadFetchTickers reads fetch-tickers Lambda configuration.
@@ -49,9 +51,10 @@ func LoadFetchTickers() (*FetchTickersConfig, error) {
 	}
 
 	return &FetchTickersConfig{
-		MassiveAPIKey: apiKey,
-		SQSQueueURL:   sqsURL,
-		TickerLimit:   intOrDefault("TICKER_LIMIT", 0),
+		MassiveAPIKey:   apiKey,
+		SQSQueueURL:     sqsURL,
+		TickerLimit:     intOrDefault("TICKER_LIMIT", 0),
+		TickerAllowlist: csvToSlice("TICKER_ALLOWLIST"),
 	}, nil
 }
 
@@ -249,4 +252,23 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func csvToSlice(key string) []string {
+	v := os.Getenv(key)
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		s := strings.TrimSpace(p)
+		if s != "" {
+			result = append(result, strings.ToUpper(s))
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
