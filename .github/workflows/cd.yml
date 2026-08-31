@@ -60,9 +60,7 @@ jobs:
           file: build/lambda-${{ matrix.function }}.Dockerfile
           platforms: linux/arm64
           push: true
-          tags: |
-            ${{ steps.ecr-login.outputs.registry }}/${{ vars.ECR_REPO_NAME }}:${{ matrix.function }}
-            ${{ steps.ecr-login.outputs.registry }}/${{ vars.ECR_REPO_NAME }}:${{ matrix.function }}-${{ github.event.workflow_run.head_sha }}
+          tags: ${{ steps.ecr-login.outputs.registry }}/${{ vars.ECR_REPO_NAME }}:${{ matrix.function }}
           cache-from: type=gha,scope=${{ matrix.function }}
           cache-to: type=gha,mode=max,scope=${{ matrix.function }}
           provenance: false
