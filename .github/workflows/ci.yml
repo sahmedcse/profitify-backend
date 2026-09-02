@@ -103,8 +103,14 @@ jobs:
         with:
           go-version: "1.25"
 
+      # The repository tests are gated on DATABASE_URL, so without a database
+      # internal/repository reports 0% despite being covered by the
+      # integration suite. Start the DB so the figure reflects reality.
+      - name: Start DB and run migrations
+        run: make docker-up
+
       - name: Coverage for this PR
-        run: go test ./... -coverprofile=coverage.out
+        run: make test-cover-integration
 
       - name: Check out the base branch
         uses: actions/checkout@v7
@@ -114,10 +120,14 @@ jobs:
 
       # Best effort: if the base fails to build, the report degrades to
       # absolute numbers with no deltas rather than failing the job.
+      # Invoked directly rather than through make, so this still works when the
+      # base branch predates the test-cover-integration target.
       - name: Coverage for the base branch
         continue-on-error: true
         working-directory: base
-        run: go test ./... -coverprofile=../base-coverage.out
+        env:
+          DATABASE_URL: postgres://profitify:profitify@localhost:5432/profitify?sslmode=disable
+        run: go test -count=1 -coverprofile=../base-coverage.out ./...
 
       - name: Render the report
         run: |

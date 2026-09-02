@@ -245,3 +245,91 @@ func TestRetry_CallsSleepBetweenAttempts(t *testing.T) {
 		t.Errorf("second sleep = %v, want 4s", sleepDurations[1])
 	}
 }
+
+func TestNewClient_Defaults(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	c := NewClient("test-key", logger)
+
+	if c == nil {
+		t.Fatal("NewClient() returned nil")
+	}
+	if c.sdk == nil {
+		t.Error("sdk client was not initialised")
+	}
+	if c.tickerSDK == nil {
+		t.Error("v3 ticker client was not initialised")
+	}
+	if c.logger != logger {
+		t.Error("logger was not stored on the client")
+	}
+	if c.maxRetries != defaultMaxRetries {
+		t.Errorf("maxRetries = %d, want %d", c.maxRetries, defaultMaxRetries)
+	}
+	if c.maxTickers != 0 {
+		t.Errorf("maxTickers = %d, want 0 (no limit)", c.maxTickers)
+	}
+	if c.baseDelay != defaultBaseDelay {
+		t.Errorf("baseDelay = %v, want %v", c.baseDelay, defaultBaseDelay)
+	}
+	if c.maxDelay != defaultMaxDelay {
+		t.Errorf("maxDelay = %v, want %v", c.maxDelay, defaultMaxDelay)
+	}
+	if c.sleep == nil {
+		t.Error("sleep func was not set")
+	}
+}
+
+func TestNewClient_AppliesOptions(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	tests := []struct {
+		name string
+		opts []Option
+		want int
+	}{
+		{name: "no options keeps default", opts: nil, want: 0},
+		{name: "single option", opts: []Option{WithMaxTickers(25)}, want: 25},
+		{name: "last option wins", opts: []Option{WithMaxTickers(5), WithMaxTickers(11)}, want: 11},
+		{name: "zero is no limit", opts: []Option{WithMaxTickers(0)}, want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewClient("test-key", logger, tt.opts...)
+			if c.maxTickers != tt.want {
+				t.Errorf("maxTickers = %d, want %d", c.maxTickers, tt.want)
+			}
+		})
+	}
+}
+
+func TestHTTPError_Error(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *httpError
+		want string
+	}{
+		{name: "rate limited", err: &httpError{statusCode: 429, body: "slow down"}, want: "HTTP 429: slow down"},
+		{name: "server error", err: &httpError{statusCode: 500, body: "boom"}, want: "HTTP 500: boom"},
+		{name: "empty body", err: &httpError{statusCode: 404, body: ""}, want: "HTTP 404: "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.err.Error(); got != tt.want {
+				t.Errorf("Error() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHTTPError_SatisfiesErrorInterface(t *testing.T) {
+	var err error = &httpError{statusCode: 503, body: "unavailable"}
+	var target *httpError
+	if !errors.As(err, &target) {
+		t.Fatal("httpError should be matchable with errors.As")
+	}
+	if target.statusCode != 503 {
+		t.Errorf("statusCode = %d, want 503", target.statusCode)
+	}
+}
