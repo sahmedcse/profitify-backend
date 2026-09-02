@@ -15,7 +15,6 @@ func NewRouter(logger *slog.Logger) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
 	r.Use(middleware.RequestLogger(logger))
 	r.Use(chimw.Recoverer)
 
