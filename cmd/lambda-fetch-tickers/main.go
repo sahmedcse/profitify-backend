@@ -36,12 +36,32 @@ type Response struct {
 	Date        string `json:"date"`
 }
 
+// filterByAllowlist returns only tickers whose symbol is in the allowlist.
+// If allowlist is empty, all tickers pass through unchanged.
+func filterByAllowlist(tickers []domain.Ticker, allowlist []string) []domain.Ticker {
+	if len(allowlist) == 0 {
+		return tickers
+	}
+	allowed := make(map[string]struct{}, len(allowlist))
+	for _, s := range allowlist {
+		allowed[s] = struct{}{}
+	}
+	filtered := make([]domain.Ticker, 0, len(allowlist))
+	for _, t := range tickers {
+		if _, ok := allowed[t.Ticker]; ok {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
+}
+
 // fetchAndPublish fetches active tickers from Massive and publishes each to SQS.
 func fetchAndPublish(
 	ctx context.Context,
 	event Event,
 	fetcher tickerFetcher,
 	pub publisher,
+	allowlist []string,
 	logger *slog.Logger,
 ) (*Response, error) {
 	date := time.Now().UTC().Format("2006-01-02")
@@ -53,6 +73,12 @@ func fetchAndPublish(
 	tickers, err := fetcher.FetchActiveTickers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fetching tickers: %w", err)
+	}
+
+	if len(allowlist) > 0 {
+		logger.Info("applying ticker allowlist", "allowlist", allowlist, "before", len(tickers))
+		tickers = filterByAllowlist(tickers, allowlist)
+		logger.Info("filtered tickers by allowlist", "after", len(tickers))
 	}
 
 	messages := make([]queue.TickerMessage, len(tickers))
@@ -90,7 +116,7 @@ func handleRequest(ctx context.Context, event Event) (*Response, error) {
 		return nil, fmt.Errorf("creating SQS publisher: %w", err)
 	}
 
-	return fetchAndPublish(ctx, event, client, pub, logger)
+	return fetchAndPublish(ctx, event, client, pub, cfg.TickerAllowlist, logger)
 }
 
 func main() {

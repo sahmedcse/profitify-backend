@@ -1,0 +1,85 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-push:
+    name: Build ${{ matrix.function }}
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: prod
+
+    strategy:
+      fail-fast: false
+      matrix:
+        function:
+          - fetch-tickers
+          - start-pipeline
+          - ingest-ohlcv
+          - fetch-technicals
+          - fetch-fundamentals
+          - enrich-ticker
+          - compute-stats
+          - close-pipeline
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: build/lambda-${{ matrix.function }}.Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.ecr-login.outputs.registry }}/${{ vars.ECR_REPO_NAME }}:${{ matrix.function }}
+          cache-from: type=gha,scope=${{ matrix.function }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.function }}
+          provenance: false
+
+      # Lambda resolves an image tag to a digest at update time and pins it, so
+      # pushing a new image under the same tag does not affect the deployed
+      # function. Without this step the images ship but never reach prod.
+      - name: Deploy image to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name prod-${{ matrix.function }} \
+            --image-uri ${{ steps.ecr-login.outputs.registry }}/${{ vars.ECR_REPO_NAME }}:${{ matrix.function }} \
+            --no-cli-pager --query 'FunctionName' --output text
+
+      # Fail the job if the new image does not become active, rather than going
+      # green while the function is broken.
+      - name: Wait for function to stabilise
+        run: |
+          aws lambda wait function-updated-v2 --function-name prod-${{ matrix.function }}
+          aws lambda get-function-configuration \
+            --function-name prod-${{ matrix.function }} \
+            --query '[State,LastUpdateStatus]' --output text

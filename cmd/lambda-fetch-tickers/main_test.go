@@ -46,7 +46,7 @@ func TestFetchAndPublish_Success(t *testing.T) {
 	}
 	pub := &stubPublisher{}
 
-	resp, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, discardLogger)
+	resp, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, nil, discardLogger)
 	if err != nil {
 		t.Fatalf("fetchAndPublish: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestFetchAndPublish_CustomDate(t *testing.T) {
 	pub := &stubPublisher{}
 
 	event := Event{Date: "2026-01-15"}
-	resp, err := fetchAndPublish(context.Background(), event, fetcher, pub, discardLogger)
+	resp, err := fetchAndPublish(context.Background(), event, fetcher, pub, nil, discardLogger)
 	if err != nil {
 		t.Fatalf("fetchAndPublish: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestFetchAndPublish_PreservesTickerFields(t *testing.T) {
 	}
 	pub := &stubPublisher{}
 
-	_, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, discardLogger)
+	_, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, nil, discardLogger)
 	if err != nil {
 		t.Fatalf("fetchAndPublish: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestFetchAndPublish_FetchError(t *testing.T) {
 	fetcher := &stubFetcher{err: fmt.Errorf("api timeout")}
 	pub := &stubPublisher{}
 
-	_, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, discardLogger)
+	_, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, nil, discardLogger)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -139,7 +139,7 @@ func TestFetchAndPublish_PublishError(t *testing.T) {
 	fetcher := &stubFetcher{tickers: []domain.Ticker{{Ticker: "AAPL"}}}
 	pub := &stubPublisher{err: fmt.Errorf("sqs send failed")}
 
-	_, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, discardLogger)
+	_, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, nil, discardLogger)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -149,7 +149,7 @@ func TestFetchAndPublish_EmptyTickers(t *testing.T) {
 	fetcher := &stubFetcher{tickers: []domain.Ticker{}}
 	pub := &stubPublisher{}
 
-	resp, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, discardLogger)
+	resp, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, nil, discardLogger)
 	if err != nil {
 		t.Fatalf("fetchAndPublish: %v", err)
 	}
@@ -178,5 +178,83 @@ func TestHandleRequest_MissingAPIKey(t *testing.T) {
 	_, err := handleRequest(context.Background(), Event{})
 	if err == nil {
 		t.Fatal("expected error for missing MASSIVE_API_KEY")
+	}
+}
+
+func TestFetchAndPublish_Allowlist(t *testing.T) {
+	fetcher := &stubFetcher{
+		tickers: []domain.Ticker{
+			{Ticker: "AAPL", Name: "Apple Inc."},
+			{Ticker: "MSFT", Name: "Microsoft"},
+			{Ticker: "GOOG", Name: "Alphabet"},
+			{Ticker: "TSLA", Name: "Tesla"},
+		},
+	}
+	pub := &stubPublisher{}
+
+	allowlist := []string{"AAPL", "TSLA"}
+	resp, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, allowlist, discardLogger)
+	if err != nil {
+		t.Fatalf("fetchAndPublish: %v", err)
+	}
+
+	if resp.TickerCount != 2 {
+		t.Errorf("TickerCount = %d, want 2", resp.TickerCount)
+	}
+	if len(pub.published) != 2 {
+		t.Fatalf("published %d messages, want 2", len(pub.published))
+	}
+	if pub.published[0].Ticker.Ticker != "AAPL" {
+		t.Errorf("first ticker = %q, want %q", pub.published[0].Ticker.Ticker, "AAPL")
+	}
+	if pub.published[1].Ticker.Ticker != "TSLA" {
+		t.Errorf("second ticker = %q, want %q", pub.published[1].Ticker.Ticker, "TSLA")
+	}
+}
+
+func TestFetchAndPublish_AllowlistEmpty(t *testing.T) {
+	fetcher := &stubFetcher{
+		tickers: []domain.Ticker{
+			{Ticker: "AAPL"},
+			{Ticker: "MSFT"},
+			{Ticker: "GOOG"},
+		},
+	}
+	pub := &stubPublisher{}
+
+	resp, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, nil, discardLogger)
+	if err != nil {
+		t.Fatalf("fetchAndPublish: %v", err)
+	}
+
+	if resp.TickerCount != 3 {
+		t.Errorf("TickerCount = %d, want 3", resp.TickerCount)
+	}
+	if len(pub.published) != 3 {
+		t.Fatalf("published %d messages, want 3", len(pub.published))
+	}
+}
+
+func TestFetchAndPublish_AllowlistCaseInsensitive(t *testing.T) {
+	fetcher := &stubFetcher{
+		tickers: []domain.Ticker{
+			{Ticker: "AAPL", Name: "Apple Inc."},
+			{Ticker: "MSFT", Name: "Microsoft"},
+		},
+	}
+	pub := &stubPublisher{}
+
+	// Config csvToSlice uppercases values, so lowercase input becomes uppercase
+	allowlist := []string{"AAPL"} // simulates "aapl" after csvToSlice processing
+	resp, err := fetchAndPublish(context.Background(), Event{}, fetcher, pub, allowlist, discardLogger)
+	if err != nil {
+		t.Fatalf("fetchAndPublish: %v", err)
+	}
+
+	if resp.TickerCount != 1 {
+		t.Errorf("TickerCount = %d, want 1", resp.TickerCount)
+	}
+	if pub.published[0].Ticker.Ticker != "AAPL" {
+		t.Errorf("ticker = %q, want %q", pub.published[0].Ticker.Ticker, "AAPL")
 	}
 }

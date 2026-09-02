@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds API server configuration loaded from environment variables.
 type Config struct {
-	DatabaseURL string
-	APIPort     string
-	AppEnv      string // "development", "staging", "production"
+	DatabaseURL  string
+	APIPort      string
+	AppEnv       string // "development", "staging", "production"
+	PoolMaxConns int
 }
 
 // Load reads API server configuration from environment variables.
@@ -22,17 +24,19 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		DatabaseURL: dbURL,
-		APIPort:     envOrDefault("API_PORT", "8080"),
-		AppEnv:      envOrDefault("APP_ENV", "development"),
+		DatabaseURL:  dbURL,
+		APIPort:      envOrDefault("API_PORT", "8080"),
+		AppEnv:       envOrDefault("APP_ENV", "development"),
+		PoolMaxConns: intOrDefault("DB_POOL_MAX_CONNS", 4),
 	}, nil
 }
 
 // FetchTickersConfig holds configuration for the fetch-tickers Lambda.
 type FetchTickersConfig struct {
-	MassiveAPIKey string
-	SQSQueueURL   string
-	TickerLimit   int
+	MassiveAPIKey   string
+	SQSQueueURL     string
+	TickerLimit     int
+	TickerAllowlist []string
 }
 
 // LoadFetchTickers reads fetch-tickers Lambda configuration.
@@ -47,16 +51,18 @@ func LoadFetchTickers() (*FetchTickersConfig, error) {
 	}
 
 	return &FetchTickersConfig{
-		MassiveAPIKey: apiKey,
-		SQSQueueURL:   sqsURL,
-		TickerLimit:   intOrDefault("TICKER_LIMIT", 0),
+		MassiveAPIKey:   apiKey,
+		SQSQueueURL:     sqsURL,
+		TickerLimit:     intOrDefault("TICKER_LIMIT", 0),
+		TickerAllowlist: csvToSlice("TICKER_ALLOWLIST"),
 	}, nil
 }
 
 // StartPipelineConfig holds configuration for the start-pipeline Lambda.
 type StartPipelineConfig struct {
-	DatabaseURL string
-	SFNArn      string
+	DatabaseURL  string
+	SFNArn       string
+	PoolMaxConns int
 }
 
 // LoadStartPipeline reads start-pipeline Lambda configuration.
@@ -71,8 +77,9 @@ func LoadStartPipeline() (*StartPipelineConfig, error) {
 	}
 
 	return &StartPipelineConfig{
-		DatabaseURL: dbURL,
-		SFNArn:      sfnArn,
+		DatabaseURL:  dbURL,
+		SFNArn:       sfnArn,
+		PoolMaxConns: intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
@@ -80,6 +87,7 @@ func LoadStartPipeline() (*StartPipelineConfig, error) {
 type IngestOHLCVConfig struct {
 	DatabaseURL   string
 	MassiveAPIKey string
+	PoolMaxConns  int
 }
 
 // LoadIngestOHLCV reads ingest-ohlcv Lambda configuration.
@@ -96,6 +104,7 @@ func LoadIngestOHLCV() (*IngestOHLCVConfig, error) {
 	return &IngestOHLCVConfig{
 		DatabaseURL:   dbURL,
 		MassiveAPIKey: apiKey,
+		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
@@ -103,6 +112,7 @@ func LoadIngestOHLCV() (*IngestOHLCVConfig, error) {
 type FetchTechnicalsConfig struct {
 	DatabaseURL   string
 	MassiveAPIKey string
+	PoolMaxConns  int
 }
 
 // LoadFetchTechnicals reads fetch-technicals Lambda configuration.
@@ -119,6 +129,7 @@ func LoadFetchTechnicals() (*FetchTechnicalsConfig, error) {
 	return &FetchTechnicalsConfig{
 		DatabaseURL:   dbURL,
 		MassiveAPIKey: apiKey,
+		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
@@ -126,6 +137,7 @@ func LoadFetchTechnicals() (*FetchTechnicalsConfig, error) {
 type FetchFundamentalsConfig struct {
 	DatabaseURL   string
 	MassiveAPIKey string
+	PoolMaxConns  int
 }
 
 // LoadFetchFundamentals reads fetch-fundamentals Lambda configuration.
@@ -142,6 +154,7 @@ func LoadFetchFundamentals() (*FetchFundamentalsConfig, error) {
 	return &FetchFundamentalsConfig{
 		DatabaseURL:   dbURL,
 		MassiveAPIKey: apiKey,
+		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
@@ -149,6 +162,7 @@ func LoadFetchFundamentals() (*FetchFundamentalsConfig, error) {
 type EnrichTickerConfig struct {
 	DatabaseURL   string
 	MassiveAPIKey string
+	PoolMaxConns  int
 }
 
 // LoadEnrichTicker reads enrich-ticker Lambda configuration.
@@ -165,6 +179,7 @@ func LoadEnrichTicker() (*EnrichTickerConfig, error) {
 	return &EnrichTickerConfig{
 		DatabaseURL:   dbURL,
 		MassiveAPIKey: apiKey,
+		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
@@ -172,6 +187,7 @@ func LoadEnrichTicker() (*EnrichTickerConfig, error) {
 type ComputeStatsConfig struct {
 	DatabaseURL   string
 	MassiveAPIKey string
+	PoolMaxConns  int
 }
 
 // LoadComputeStats reads compute-stats Lambda configuration.
@@ -188,6 +204,26 @@ func LoadComputeStats() (*ComputeStatsConfig, error) {
 	return &ComputeStatsConfig{
 		DatabaseURL:   dbURL,
 		MassiveAPIKey: apiKey,
+		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
+	}, nil
+}
+
+// ClosePipelineConfig holds configuration for the close-pipeline Lambda.
+type ClosePipelineConfig struct {
+	DatabaseURL  string
+	PoolMaxConns int
+}
+
+// LoadClosePipeline reads close-pipeline Lambda configuration.
+func LoadClosePipeline() (*ClosePipelineConfig, error) {
+	dbURL, err := required("DATABASE_URL")
+	if err != nil {
+		return nil, err
+	}
+
+	return &ClosePipelineConfig{
+		DatabaseURL:  dbURL,
+		PoolMaxConns: intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
@@ -216,4 +252,23 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func csvToSlice(key string) []string {
+	v := os.Getenv(key)
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		s := strings.TrimSpace(p)
+		if s != "" {
+			result = append(result, strings.ToUpper(s))
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
