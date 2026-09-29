@@ -161,6 +161,66 @@ func TestGetBySymbol_NotFound(t *testing.T) {
 	}
 }
 
+func TestUpsertBatch_SetsIDsOnInsert(t *testing.T) {
+	pool := testPool(t)
+	cleanTickers(t, pool)
+
+	repo := repository.NewTickerRepo(pool, discardLogger)
+	ctx := context.Background()
+
+	tickers := []domain.Ticker{
+		{Ticker: "AAPL", Name: "Apple Inc.", Market: "stocks", Active: true},
+		{Ticker: "MSFT", Name: "Microsoft Corporation", Market: "stocks", Active: true},
+	}
+
+	if err := repo.UpsertBatch(ctx, tickers); err != nil {
+		t.Fatalf("UpsertBatch: %v", err)
+	}
+
+	for i, want := range tickers {
+		if tickers[i].ID == "" {
+			t.Fatalf("tickers[%d].ID is empty after upsert", i)
+		}
+		got, err := repo.GetBySymbol(ctx, want.Ticker)
+		if err != nil {
+			t.Fatalf("GetBySymbol(%q): %v", want.Ticker, err)
+		}
+		if got.ID != tickers[i].ID {
+			t.Errorf("tickers[%d].ID = %q, want %q (GetBySymbol)", i, tickers[i].ID, got.ID)
+		}
+	}
+}
+
+func TestUpsertBatch_SetsExistingIDOnConflict(t *testing.T) {
+	pool := testPool(t)
+	cleanTickers(t, pool)
+
+	repo := repository.NewTickerRepo(pool, discardLogger)
+	ctx := context.Background()
+
+	first := []domain.Ticker{
+		{Ticker: "AAPL", Name: "Apple Inc.", Market: "stocks", Active: true},
+	}
+	if err := repo.UpsertBatch(ctx, first); err != nil {
+		t.Fatalf("first UpsertBatch: %v", err)
+	}
+	firstID := first[0].ID
+	if firstID == "" {
+		t.Fatal("expected non-empty ID after first upsert")
+	}
+
+	second := []domain.Ticker{
+		{Ticker: "AAPL", Name: "Apple Inc. (Updated)", Market: "stocks", Active: true},
+	}
+	if err := repo.UpsertBatch(ctx, second); err != nil {
+		t.Fatalf("second UpsertBatch: %v", err)
+	}
+
+	if second[0].ID != firstID {
+		t.Errorf("ID on conflict = %q, want unchanged %q", second[0].ID, firstID)
+	}
+}
+
 func TestGetBySymbol_ReturnsFull(t *testing.T) {
 	pool := testPool(t)
 	cleanTickers(t, pool)

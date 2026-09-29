@@ -22,6 +22,9 @@ func NewTickerRepo(pool *pgxpool.Pool, logger *slog.Logger) TickerRepository {
 	return &tickerRepo{pool: pool, logger: logger}
 }
 
+// UpsertBatch inserts or updates each ticker in a single pgx batch. On
+// success, sets tickers[i].ID to the row's UUID, whether inserted or already
+// present.
 func (r *tickerRepo) UpsertBatch(ctx context.Context, tickers []domain.Ticker) error {
 	if len(tickers) == 0 {
 		return nil
@@ -44,7 +47,8 @@ func (r *tickerRepo) UpsertBatch(ctx context.Context, tickers []domain.Ticker) e
 			cik              = EXCLUDED.cik,
 			list_date        = EXCLUDED.list_date,
 			delisted_utc     = EXCLUDED.delisted_utc,
-			updated_at       = NOW()`
+			updated_at       = NOW()
+		RETURNING id`
 
 	for _, t := range tickers {
 		batch.Queue(query,
@@ -57,7 +61,7 @@ func (r *tickerRepo) UpsertBatch(ctx context.Context, tickers []domain.Ticker) e
 	defer func() { _ = br.Close() }()
 
 	for i := 0; i < len(tickers); i++ {
-		if _, err := br.Exec(); err != nil {
+		if err := br.QueryRow().Scan(&tickers[i].ID); err != nil {
 			return fmt.Errorf("tickerRepo.UpsertBatch: row %d (%s): %w", i, tickers[i].Ticker, err)
 		}
 	}
