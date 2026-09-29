@@ -399,6 +399,75 @@ func (c *conditionalRunRepo) UpdateSFNArn(_ context.Context, id, arn string) err
 	return nil
 }
 
+func TestStartPipeline_MissingTickerID(t *testing.T) {
+	runs := &trackingRunRepo{}
+	stages := &stubStageRepo{}
+	sfnClient := &stubSFNClient{}
+
+	msg := validMessage()
+	msg.ID = ""
+
+	event := makeSQSEvent(msg)
+	resp, err := startPipeline(context.Background(), event, runs, stages, sfnClient, "arn:sfn:test", discardLogger)
+	if err != nil {
+		t.Fatalf("startPipeline: %v", err)
+	}
+
+	if len(resp.BatchItemFailures) != 1 {
+		t.Fatalf("expected 1 failure, got %d", len(resp.BatchItemFailures))
+	}
+	if resp.BatchItemFailures[0].ItemIdentifier != "msg-0" {
+		t.Errorf("failed message ID = %q, want %q", resp.BatchItemFailures[0].ItemIdentifier, "msg-0")
+	}
+
+	if runs.created != nil {
+		t.Error("runs.Create should not be called for a message with no ticker id")
+	}
+}
+
+func TestStartPipeline_PartialBatchFailure(t *testing.T) {
+	runs := &trackingRunRepo{}
+	stages := &stubStageRepo{}
+	sfnClient := &stubSFNClient{}
+
+	good := validMessage()
+
+	event := events.SQSEvent{
+		Records: []events.SQSMessage{
+			{MessageId: "bad-msg", Body: "not json"},
+			{MessageId: "good-msg", Body: string(mustMarshal(t, good))},
+		},
+	}
+
+	resp, err := startPipeline(context.Background(), event, runs, stages, sfnClient, "arn:sfn:test", discardLogger)
+	if err != nil {
+		t.Fatalf("startPipeline: %v", err)
+	}
+
+	if len(resp.BatchItemFailures) != 1 {
+		t.Fatalf("expected 1 failure, got %d", len(resp.BatchItemFailures))
+	}
+	if resp.BatchItemFailures[0].ItemIdentifier != "bad-msg" {
+		t.Errorf("failed message ID = %q, want %q", resp.BatchItemFailures[0].ItemIdentifier, "bad-msg")
+	}
+
+	if runs.created == nil {
+		t.Fatal("expected the good record to be processed (run created)")
+	}
+	if runs.created.Ticker != "AAPL" {
+		t.Errorf("processed ticker = %q, want AAPL", runs.created.Ticker)
+	}
+}
+
+func mustMarshal(t *testing.T, msg queue.TickerMessage) []byte {
+	t.Helper()
+	body, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal message: %v", err)
+	}
+	return body
+}
+
 func TestStartPipeline_SFNInput(t *testing.T) {
 	runs := &trackingRunRepo{}
 	stages := &stubStageRepo{}

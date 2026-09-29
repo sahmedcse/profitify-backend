@@ -270,7 +270,7 @@ Each Task state in the child Step Function has retry configuration:
 | `MassiveAPIError` | 3 | 5s | 2.0x |
 | `DatabaseError` | 3 | 3s | 2.0x |
 
-After all retries exhaust, the stage routes to a `RecordFailure` catch state that logs `{ticker, stage, error, timestamp}`.
+After all retries exhaust, the stage's `Catch States.ALL` routes to `MarkRunFailed` (`ResultPath $.error`), which invokes the `close-pipeline` Lambda with the whole state as input. `close-pipeline` sees a non-nil `error` field, calls `pipeline_runs.UpdateStatus(runID, "failed", "<Error>: <Cause>")` (truncated to 2000 runes; `"unknown error"` if both are empty), and returns `pipeline_status: "failed"` without touching `MarkCompleted`. The state machine then transitions to the `PipelineFailed` Fail state, so the execution still ends in `FAILED` (visible to `ExecutionsFailed`/`ExecutionsTimedOut` alarms) even though the run row and the failure reason are already recorded.
 
 ### SQS Retry
 
@@ -296,6 +296,30 @@ Per-Lambda config structs — each Lambda loads only the env vars it needs.
 | `SFN_ARN` | start-pipeline | Child Step Function ARN for per-ticker pipeline |
 | `API_PORT` | api server | HTTP server port (default: 8080) |
 | `APP_ENV` | api server | Environment name (default: development) |
+
+## Manual Invocation
+
+`fetch-tickers` accepts an optional `tickers` field to run a scoped, ad-hoc fetch for specific
+symbols instead of the full universe:
+
+```bash
+aws lambda invoke --function-name prod-fetch-tickers \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"tickers":["AAPL","MSFT"]}' out.json
+```
+
+Behavior:
+
+- Symbols are normalized (trimmed, upper-cased, deduped) with the same `config.NormalizeSymbols`
+  helper used for `TICKER_ALLOWLIST`. A non-empty result **replaces** `TICKER_ALLOWLIST` for this
+  invoke only, and disables `TICKER_LIMIT` (an event-scoped run must not be truncated by the page
+  walk before reaching a requested symbol).
+- `{"tickers": []}` and omitting `tickers` entirely are equivalent — both run the normal
+  allowlist/limit-driven fetch.
+- Symbols the event asked for but Massive did not return as active (typos, delisted) come back in
+  the response's `unmatched_tickers` field. This is not treated as an error.
+- Every published ticker still goes through the same upsert-then-publish path, so `start-pipeline`
+  and the child Step Function run exactly as they would for a scheduled invocation.
 
 ## Dependencies
 

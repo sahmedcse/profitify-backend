@@ -187,6 +187,7 @@ func TestLoadFetchTickers(t *testing.T) {
 		clearEnv(t)
 		t.Setenv("MASSIVE_API_KEY", "key")
 		t.Setenv("SQS_QUEUE_URL", "https://sqs/q")
+		t.Setenv("DATABASE_URL", "postgres://localhost/db")
 
 		cfg, err := LoadFetchTickers()
 		if err != nil {
@@ -201,12 +202,16 @@ func TestLoadFetchTickers(t *testing.T) {
 		if cfg.TickerAllowlist != nil {
 			t.Errorf("TickerAllowlist = %v, want nil", cfg.TickerAllowlist)
 		}
+		if cfg.DatabaseURL != "postgres://localhost/db" {
+			t.Errorf("DatabaseURL = %q", cfg.DatabaseURL)
+		}
 	})
 
 	t.Run("allowlist and limit parsed", func(t *testing.T) {
 		clearEnv(t)
 		t.Setenv("MASSIVE_API_KEY", "key")
 		t.Setenv("SQS_QUEUE_URL", "https://sqs/q")
+		t.Setenv("DATABASE_URL", "postgres://localhost/db")
 		t.Setenv("TICKER_LIMIT", "50")
 		t.Setenv("TICKER_ALLOWLIST", "aapl, msft")
 
@@ -233,8 +238,9 @@ func TestLoadFetchTickers(t *testing.T) {
 			name string
 			env  map[string]string
 		}{
-			{name: "no api key", env: map[string]string{"SQS_QUEUE_URL": "https://sqs/q"}},
-			{name: "no queue url", env: map[string]string{"MASSIVE_API_KEY": "key"}},
+			{name: "no api key", env: map[string]string{"SQS_QUEUE_URL": "https://sqs/q", "DATABASE_URL": "postgres://localhost/db"}},
+			{name: "no queue url", env: map[string]string{"MASSIVE_API_KEY": "key", "DATABASE_URL": "postgres://localhost/db"}},
+			{name: "no database url", env: map[string]string{"MASSIVE_API_KEY": "key", "SQS_QUEUE_URL": "https://sqs/q"}},
 			{name: "neither", env: map[string]string{}},
 		}
 		for _, c := range cases {
@@ -249,6 +255,66 @@ func TestLoadFetchTickers(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestLoadFetchTickers_RequiresDatabaseURL(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("MASSIVE_API_KEY", "key")
+	t.Setenv("SQS_QUEUE_URL", "https://sqs/q")
+
+	if _, err := LoadFetchTickers(); err == nil {
+		t.Fatal("LoadFetchTickers() error = nil, want error for missing DATABASE_URL")
+	}
+}
+
+func TestLoadFetchTickers_PoolMaxConnsDefault(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("MASSIVE_API_KEY", "key")
+	t.Setenv("SQS_QUEUE_URL", "https://sqs/q")
+	t.Setenv("DATABASE_URL", "postgres://localhost/db")
+
+	cfg, err := LoadFetchTickers()
+	if err != nil {
+		t.Fatalf("LoadFetchTickers() error = %v", err)
+	}
+	if cfg.PoolMaxConns != 1 {
+		t.Errorf("PoolMaxConns = %d, want default 1", cfg.PoolMaxConns)
+	}
+}
+
+func TestNormalizeSymbols(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{name: "nil input", in: nil, want: nil},
+		{name: "empty input", in: []string{}, want: nil},
+		{name: "trims and uppercases", in: []string{" aapl ", "msft"}, want: []string{"AAPL", "MSFT"}},
+		{name: "drops blanks", in: []string{"", " ", "AAPL"}, want: []string{"AAPL"}},
+		{name: "all blank returns nil", in: []string{"", "  "}, want: nil},
+		{name: "dedupes preserving first-seen order", in: []string{"AAPL", "msft", "aapl", "MSFT", "GOOG"}, want: []string{"AAPL", "MSFT", "GOOG"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NormalizeSymbols(tt.in)
+			if tt.want == nil {
+				if got != nil {
+					t.Fatalf("NormalizeSymbols(%v) = %v, want nil", tt.in, got)
+				}
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("NormalizeSymbols(%v) = %v, want %v", tt.in, got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("NormalizeSymbols(%v)[%d] = %q, want %q", tt.in, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
 }
 
 func TestLoadStartPipeline(t *testing.T) {
