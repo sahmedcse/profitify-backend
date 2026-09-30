@@ -37,6 +37,8 @@ type FetchTickersConfig struct {
 	SQSQueueURL     string
 	TickerLimit     int
 	TickerAllowlist []string
+	DatabaseURL     string
+	PoolMaxConns    int
 }
 
 // LoadFetchTickers reads fetch-tickers Lambda configuration.
@@ -49,12 +51,18 @@ func LoadFetchTickers() (*FetchTickersConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	dbURL, err := required("DATABASE_URL")
+	if err != nil {
+		return nil, err
+	}
 
 	return &FetchTickersConfig{
 		MassiveAPIKey:   apiKey,
 		SQSQueueURL:     sqsURL,
 		TickerLimit:     intOrDefault("TICKER_LIMIT", 0),
 		TickerAllowlist: csvToSlice("TICKER_ALLOWLIST"),
+		DatabaseURL:     dbURL,
+		PoolMaxConns:    intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
@@ -259,13 +267,26 @@ func csvToSlice(key string) []string {
 	if v == "" {
 		return nil
 	}
-	parts := strings.Split(v, ",")
-	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		s := strings.TrimSpace(p)
-		if s != "" {
-			result = append(result, strings.ToUpper(s))
+	return NormalizeSymbols(strings.Split(v, ","))
+}
+
+// NormalizeSymbols trims whitespace, upper-cases, drops blank entries, and
+// removes duplicates while preserving first-seen order. It is the single
+// normalizer shared by env-var allowlists (via csvToSlice) and event-supplied
+// ticker lists. Returns nil when every entry is blank or symbols is empty.
+func NormalizeSymbols(symbols []string) []string {
+	seen := make(map[string]struct{}, len(symbols))
+	result := make([]string, 0, len(symbols))
+	for _, s := range symbols {
+		trimmed := strings.ToUpper(strings.TrimSpace(s))
+		if trimmed == "" {
+			continue
 		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
 	}
 	if len(result) == 0 {
 		return nil

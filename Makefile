@@ -1,4 +1,4 @@
-.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-localstack-up docker-localstack-down docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down build-lambda-enrich-ticker docker-lambda-enrich-ticker-up docker-lambda-enrich-ticker-invoke docker-lambda-enrich-ticker-down build-lambda-compute-stats docker-lambda-compute-stats-up docker-lambda-compute-stats-invoke docker-lambda-compute-stats-down build-lambda-start-pipeline docker-lambda-start-pipeline-up docker-lambda-start-pipeline-invoke docker-lambda-start-pipeline-down build-lambda-close-pipeline docker-lambda-close-pipeline-up docker-lambda-close-pipeline-invoke docker-lambda-close-pipeline-down docker-pipeline-up docker-pipeline-down
+.PHONY: build build-api build-cron build-lambdas lint test test-race test-cover test-integration test-cover-integration migrate-up migrate-down migrate-status migrate-create clean help docker-up docker-down docker-reset docker-migrate docker-migrate-down docker-migrate-status docker-psql docker-localstack-up docker-localstack-down docker-lambda-fetch-tickers-up docker-lambda-fetch-tickers-invoke docker-lambda-fetch-tickers-down build-lambda-ingest-ohlcv docker-lambda-ingest-ohlcv-up docker-lambda-ingest-ohlcv-invoke docker-lambda-ingest-ohlcv-down build-lambda-fetch-technicals docker-lambda-fetch-technicals-up docker-lambda-fetch-technicals-invoke docker-lambda-fetch-technicals-down build-lambda-fetch-fundamentals docker-lambda-fetch-fundamentals-up docker-lambda-fetch-fundamentals-invoke docker-lambda-fetch-fundamentals-down build-lambda-enrich-ticker docker-lambda-enrich-ticker-up docker-lambda-enrich-ticker-invoke docker-lambda-enrich-ticker-down build-lambda-compute-stats docker-lambda-compute-stats-up docker-lambda-compute-stats-invoke docker-lambda-compute-stats-down build-lambda-start-pipeline docker-lambda-start-pipeline-up docker-lambda-start-pipeline-invoke docker-lambda-start-pipeline-down build-lambda-close-pipeline docker-lambda-close-pipeline-up docker-lambda-close-pipeline-invoke docker-lambda-close-pipeline-down docker-pipeline-up docker-pipeline-down
 
 # Docker parameters
 DOCKER_COMPOSE=docker compose
@@ -85,6 +85,10 @@ test-cover:
 ## test-integration: Run integration tests against Docker DB
 test-integration:
 	DATABASE_URL=$(DOCKER_DB_URL) $(GOTEST) -count=1 ./...
+
+## test-cover-integration: Coverage across unit and integration tests
+test-cover-integration:
+	DATABASE_URL=$(DOCKER_DB_URL) $(GOTEST) -count=1 -coverprofile=coverage.out ./...
 
 ## vet: Run go vet
 vet:

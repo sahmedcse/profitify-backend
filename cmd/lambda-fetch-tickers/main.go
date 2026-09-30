@@ -9,15 +9,23 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"github.com/profitify/profitify-backend/internal/config"
+	"github.com/profitify/profitify-backend/internal/db"
 	"github.com/profitify/profitify-backend/internal/domain"
 	lambdautil "github.com/profitify/profitify-backend/internal/lambda"
 	"github.com/profitify/profitify-backend/internal/massive"
 	"github.com/profitify/profitify-backend/internal/queue"
+	"github.com/profitify/profitify-backend/internal/repository"
 )
 
 // tickerFetcher abstracts the Massive client for testing.
 type tickerFetcher interface {
 	FetchActiveTickers(ctx context.Context) ([]domain.Ticker, error)
+}
+
+// tickerUpserter abstracts the ticker repository for testing.
+// repository.TickerRepository satisfies this implicitly.
+type tickerUpserter interface {
+	UpsertBatch(ctx context.Context, tickers []domain.Ticker) error
 }
 
 // publisher abstracts the SQS publisher for testing.
@@ -28,12 +36,18 @@ type publisher interface {
 // Event is the optional input payload for the FetchTickers Lambda.
 type Event struct {
 	Date string `json:"date"`
+	// Tickers, when non-empty after normalization, replaces the env
+	// TICKER_ALLOWLIST for this invoke and disables TICKER_LIMIT.
+	Tickers []string `json:"tickers,omitempty"`
 }
 
 // Response is the output payload for the FetchTickers Lambda.
 type Response struct {
 	TickerCount int    `json:"ticker_count"`
 	Date        string `json:"date"`
+	// UnmatchedTickers lists requested event symbols Massive did not return
+	// as active. Only populated when the event carried a ticker list.
+	UnmatchedTickers []string `json:"unmatched_tickers,omitempty"`
 }
 
 // filterByAllowlist returns only tickers whose symbol is in the allowlist.
@@ -55,11 +69,24 @@ func filterByAllowlist(tickers []domain.Ticker, allowlist []string) []domain.Tic
 	return filtered
 }
 
-// fetchAndPublish fetches active tickers from Massive and publishes each to SQS.
+// effectiveTickerLimit returns 0 (unbounded) when the event carries its own
+// ticker list, since TICKER_LIMIT could otherwise truncate the Massive page
+// walk before a requested symbol is reached. Otherwise it returns cfgLimit.
+func effectiveTickerLimit(cfgLimit int, eventTickers []string) int {
+	if len(eventTickers) > 0 {
+		return 0
+	}
+	return cfgLimit
+}
+
+// fetchAndPublish fetches active tickers from Massive, upserts the filtered
+// set (assigning each a tickers.id), and publishes one SQS message per
+// ticker.
 func fetchAndPublish(
 	ctx context.Context,
 	event Event,
 	fetcher tickerFetcher,
+	upserter tickerUpserter,
 	pub publisher,
 	allowlist []string,
 	logger *slog.Logger,
@@ -75,10 +102,44 @@ func fetchAndPublish(
 		return nil, fmt.Errorf("fetching tickers: %w", err)
 	}
 
-	if len(allowlist) > 0 {
-		logger.Info("applying ticker allowlist", "allowlist", allowlist, "before", len(tickers))
-		tickers = filterByAllowlist(tickers, allowlist)
-		logger.Info("filtered tickers by allowlist", "after", len(tickers))
+	eventTickers := config.NormalizeSymbols(event.Tickers)
+	filter := allowlist
+	if len(eventTickers) > 0 {
+		logger.Info("event tickers override allowlist", "tickers", eventTickers)
+		filter = eventTickers
+	}
+
+	if len(filter) > 0 {
+		logger.Info("applying ticker filter", "filter", filter, "before", len(tickers))
+		tickers = filterByAllowlist(tickers, filter)
+		logger.Info("filtered tickers", "after", len(tickers))
+	}
+
+	var unmatched []string
+	if len(eventTickers) > 0 {
+		found := make(map[string]struct{}, len(tickers))
+		for _, t := range tickers {
+			found[t.Ticker] = struct{}{}
+		}
+		for _, sym := range eventTickers {
+			if _, ok := found[sym]; !ok {
+				unmatched = append(unmatched, sym)
+			}
+		}
+		if len(unmatched) > 0 {
+			logger.Info("event tickers unmatched", "unmatched_tickers", unmatched)
+		}
+	}
+
+	logger.Info("upserting filtered tickers", "count", len(tickers))
+	if err := upserter.UpsertBatch(ctx, tickers); err != nil {
+		return nil, fmt.Errorf("upserting tickers: %w", err)
+	}
+
+	for i := range tickers {
+		if tickers[i].ID == "" {
+			return nil, fmt.Errorf("ticker %s has no id after upsert", tickers[i].Ticker)
+		}
 	}
 
 	messages := make([]queue.TickerMessage, len(tickers))
@@ -96,8 +157,9 @@ func fetchAndPublish(
 
 	logger.Info("fetch-tickers complete", "ticker_count", len(tickers), "date", date)
 	return &Response{
-		TickerCount: len(tickers),
-		Date:        date,
+		TickerCount:      len(tickers),
+		Date:             date,
+		UnmatchedTickers: unmatched,
 	}, nil
 }
 
@@ -109,14 +171,28 @@ func handleRequest(ctx context.Context, event Event) (*Response, error) {
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
 
-	client := massive.NewClient(cfg.MassiveAPIKey, logger, massive.WithMaxTickers(cfg.TickerLimit))
+	eventTickers := config.NormalizeSymbols(event.Tickers)
+	if len(eventTickers) > 0 {
+		logger.Info("event carries an explicit ticker list", "tickers", eventTickers)
+	}
+	limit := effectiveTickerLimit(cfg.TickerLimit, eventTickers)
+
+	client := massive.NewClient(cfg.MassiveAPIKey, logger, massive.WithMaxTickers(limit))
 
 	pub, err := queue.NewPublisher(ctx, cfg.SQSQueueURL)
 	if err != nil {
 		return nil, fmt.Errorf("creating SQS publisher: %w", err)
 	}
 
-	return fetchAndPublish(ctx, event, client, pub, cfg.TickerAllowlist, logger)
+	pool, err := db.New(ctx, cfg.DatabaseURL, db.WithMaxConns(int32(cfg.PoolMaxConns)))
+	if err != nil {
+		return nil, fmt.Errorf("connecting to database: %w", err)
+	}
+	defer pool.Close()
+
+	tickerRepo := repository.NewTickerRepo(pool, logger)
+
+	return fetchAndPublish(ctx, event, client, tickerRepo, pub, cfg.TickerAllowlist, logger)
 }
 
 func main() {
