@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -20,10 +21,18 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
+	if err := run(logger); err != nil {
+		logger.Error("server exited with error", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+}
+
+// run starts the API server and blocks until a shutdown signal arrives.
+// It returns an error rather than exiting so the startup paths are testable.
+func run(logger *slog.Logger) error {
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Error("failed to load config", slog.String("error", err.Error()))
-		os.Exit(1)
+		return fmt.Errorf("loading config: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -31,8 +40,7 @@ func main() {
 
 	pool, err := db.New(ctx, cfg.DatabaseURL, db.WithMaxConns(int32(cfg.PoolMaxConns)))
 	if err != nil {
-		logger.Error("failed to connect to database", slog.String("error", err.Error()))
-		os.Exit(1)
+		return fmt.Errorf("connecting to database: %w", err)
 	}
 	defer pool.Close()
 
@@ -52,24 +60,31 @@ func main() {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
+	serverErr := make(chan error, 1)
 	go func() {
 		logger.Info("server starting", slog.String("port", cfg.APIPort))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("server failed", slog.String("error", err.Error()))
-			os.Exit(1)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- fmt.Errorf("serving: %w", err)
+			return
 		}
+		serverErr <- nil
 	}()
 
-	<-done
+	select {
+	case err := <-serverErr:
+		return err
+	case <-done:
+	}
+
 	logger.Info("server shutting down")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error("server forced to shutdown", slog.String("error", err.Error()))
-		os.Exit(1)
+		return fmt.Errorf("shutting down: %w", err)
 	}
 
 	logger.Info("server stopped")
+	return nil
 }

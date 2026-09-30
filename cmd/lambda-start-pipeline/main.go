@@ -85,6 +85,10 @@ func processTicker(
 	sfnArn string,
 	logger *slog.Logger,
 ) error {
+	if msg.ID == "" {
+		return fmt.Errorf("message for %s has no ticker id", msg.Ticker.Ticker)
+	}
+
 	// 1. Parse date and create pipeline run.
 	parsedDate, err := time.Parse("2006-01-02", msg.Date)
 	if err != nil {
