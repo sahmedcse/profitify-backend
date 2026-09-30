@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/profitify/profitify-backend/internal/db"
+	"github.com/profitify/profitify-backend/internal/secrets"
 	"github.com/profitify/profitify-backend/internal/testutil"
 )
 
@@ -201,6 +202,36 @@ func TestMassiveAPIKey_WithSecretARN_ReturnsSecretValue(t *testing.T) {
 	}
 	if gotARN != "arn:secret:massive" {
 		t.Errorf("apiKeySourceFor called with arn = %q, want arn:secret:massive", gotARN)
+	}
+}
+
+// TestCredentialSourceFor_DefaultBuildsSecretsDBSecret exercises the real,
+// unoverridden credentialSourceFor var (every other test in this file
+// replaces it with a fake), so ConnectDB's default wiring to
+// secrets.ForARN is actually covered rather than only its override seam.
+// Building the client and the *secrets.DBSecret instance never fetches the
+// secret itself, so this needs no AWS credentials or network access.
+func TestCredentialSourceFor_DefaultBuildsSecretsDBSecret(t *testing.T) {
+	src, err := credentialSourceFor(context.Background(), "arn:aws:secretsmanager:us-east-1:123456789012:secret:lambda-default-wiring-test")
+	if err != nil {
+		t.Fatalf("credentialSourceFor() error = %v", err)
+	}
+	if _, ok := src.(*secrets.DBSecret); !ok {
+		t.Errorf("credentialSourceFor() returned %T, want *secrets.DBSecret", src)
+	}
+}
+
+// TestApiKeySourceFor_DefaultBuildsSecretsStringSecret is the MassiveAPIKey
+// analogue of TestCredentialSourceFor_DefaultBuildsSecretsDBSecret: it
+// exercises the real, unoverridden apiKeySourceFor var and its wiring to
+// secrets.StringSecretForARN.
+func TestApiKeySourceFor_DefaultBuildsSecretsStringSecret(t *testing.T) {
+	src, err := apiKeySourceFor(context.Background(), "arn:aws:secretsmanager:us-east-1:123456789012:secret:lambda-default-wiring-test-2")
+	if err != nil {
+		t.Fatalf("apiKeySourceFor() error = %v", err)
+	}
+	if _, ok := src.(*secrets.StringSecret); !ok {
+		t.Errorf("apiKeySourceFor() returned %T, want *secrets.StringSecret", src)
 	}
 }
 
