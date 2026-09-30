@@ -12,3 +12,9 @@ type TickerEvent struct {
 	Date     string `json:"date"`      // "2006-01-02" format
 	RunID    string `json:"run_id"`    // UUID from pipeline_runs table (empty = no tracking)
 }
+
+// StageError is the object Step Functions writes at a Catch's ResultPath.
+type StageError struct {
+	Error string `json:"Error"`
+	Cause string `json:"Cause"`
+}

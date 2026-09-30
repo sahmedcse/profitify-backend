@@ -19,6 +19,7 @@ import (
 type runCompleter interface {
 	MarkCompleted(ctx context.Context, id string) error
 	GetByID(ctx context.Context, id string) (*domain.PipelineRun, error)
+	UpdateStatus(ctx context.Context, id, status, errMsg string) error
 }
 
 // stageTracker abstracts pipeline stage tracking for testing.
@@ -28,6 +29,20 @@ type stageTracker interface {
 	MarkFailed(ctx context.Context, runID, tickerID, stage, errorMessage string) error
 }
 
+// maxErrorMessageRunes bounds the error message written to pipeline_runs so
+// a runaway Cause payload cannot blow out the column.
+const maxErrorMessageRunes = 2000
+
+// Event is the input payload for the ClosePipeline Lambda. It is used both
+// on the success path (Error is nil) and as the MarkRunFailed task input,
+// where Step Functions writes the Catch result at $.error. The state also
+// carries stage results (ingestResult, fetchTechnicalsResult, …) that this
+// Lambda ignores via encoding/json's default unknown-field behavior.
+type Event struct {
+	pipeline.TickerEvent
+	Error *pipeline.StageError `json:"error,omitempty"`
+}
+
 // Response is the output payload for the ClosePipeline Lambda.
 type Response struct {
 	Ticker         string `json:"ticker"`
@@ -35,10 +50,25 @@ type Response struct {
 	PipelineStatus string `json:"pipeline_status"`
 }
 
+// failureMessage builds the pipeline_runs.error_message for the failure
+// path: "<Error>: <Cause>", or "unknown error" when both are empty,
+// truncated to maxErrorMessageRunes runes.
+func failureMessage(e *pipeline.StageError) string {
+	if e.Error == "" && e.Cause == "" {
+		return "unknown error"
+	}
+	msg := fmt.Sprintf("%s: %s", e.Error, e.Cause)
+	runes := []rune(msg)
+	if len(runes) > maxErrorMessageRunes {
+		return string(runes[:maxErrorMessageRunes])
+	}
+	return msg
+}
+
 // closePipeline is the core logic.
 func closePipeline(
 	ctx context.Context,
-	event pipeline.TickerEvent,
+	event Event,
 	runs runCompleter,
 	tracker stageTracker,
 	logger *slog.Logger,
@@ -55,6 +85,25 @@ func closePipeline(
 	st := pipeline.NewStageTracker(tracker, event.RunID, event.TickerID, domain.StageClosePipeline, logger)
 	_ = st.Begin(ctx)
 	defer func() { st.End(ctx, retErr) }()
+
+	if event.Error != nil {
+		msg := failureMessage(event.Error)
+		if err := runs.UpdateStatus(ctx, event.RunID, domain.PipelineStatusFailed, msg); err != nil {
+			return nil, fmt.Errorf("marking pipeline run failed: %w", err)
+		}
+
+		logger.Info("pipeline marked failed",
+			"ticker", event.Ticker,
+			"run_id", event.RunID,
+			"error", msg,
+		)
+
+		return &Response{
+			Ticker:         event.Ticker,
+			Date:           event.Date,
+			PipelineStatus: domain.PipelineStatusFailed,
+		}, nil
+	}
 
 	if err := runs.MarkCompleted(ctx, event.RunID); err != nil {
 		return nil, fmt.Errorf("marking pipeline run completed: %w", err)
@@ -78,7 +127,7 @@ func closePipeline(
 	}, nil
 }
 
-func handleRequest(ctx context.Context, event pipeline.TickerEvent) (*Response, error) {
+func handleRequest(ctx context.Context, event Event) (*Response, error) {
 	logger := lambdautil.InitLogger()
 
 	cfg, err := config.LoadClosePipeline()
