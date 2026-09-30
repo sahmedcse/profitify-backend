@@ -63,7 +63,7 @@ func TestInitLogger_ReturnsIndependentInstances(t *testing.T) {
 // fakeCredSource is a test db.CredentialSource.
 type fakeCredSource struct {
 	username, password string
-	err                 error
+	err                error
 }
 
 func (f *fakeCredSource) Credentials(context.Context) (string, string, error) {

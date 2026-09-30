@@ -18,8 +18,8 @@ import (
 // returns it instead of the configured username/password.
 type fakeCredSource struct {
 	username, password string
-	err                 error
-	invalidateCalls     int
+	err                error
+	invalidateCalls    int
 }
 
 func (f *fakeCredSource) Credentials(context.Context) (string, string, error) {
