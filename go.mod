@@ -7,7 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.25
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.43.2
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.44.0
-	github.com/go-chi/chi/v5 v5.3.0
+	github.com/go-chi/chi/v5 v5.3.2
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/massive-com/client-go/v2 v2.0.0
 	github.com/massive-com/client-go/v3 v3.3.0
