@@ -290,8 +290,10 @@ Per-Lambda config structs — each Lambda loads only the env vars it needs.
 
 | Variable | Used By | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | fetch-tickers, ingest-ohlcv, enrich-ticker, compute-stats | PostgreSQL/TimescaleDB connection string |
-| `MASSIVE_API_KEY` | fetch-tickers, ingest-ohlcv, enrich-ticker | Massive API key (Business plan) |
+| `DATABASE_URL` | all 8 pipeline Lambdas | PostgreSQL/TimescaleDB connection string. Credential-free in AWS (see `DB_SECRET_ARN`); may still carry credentials locally / in docker-compose. |
+| `DB_SECRET_ARN` | all 8 pipeline Lambdas | ARN of a Secrets Manager JSON `{username,password}` secret. Optional; when set, DB credentials are resolved from it and win over any `DATABASE_URL` userinfo. Unset locally / in docker-compose. |
+| `MASSIVE_API_KEY` | fetch-tickers, ingest-ohlcv, fetch-technicals, fetch-fundamentals, compute-stats | Massive API key (Business plan). Local dev / docker-compose fallback only — removed from every Lambda environment in AWS. |
+| `MASSIVE_API_KEY_SECRET_ARN` | fetch-tickers, ingest-ohlcv, fetch-technicals, fetch-fundamentals, compute-stats (exactly these 5) | ARN of a Secrets Manager plain-string secret holding the Massive API key. Optional; when set, wins over `MASSIVE_API_KEY`. |
 | `SQS_QUEUE_URL` | fetch-tickers | SQS queue URL for ticker fan-out |
 | `SFN_ARN` | start-pipeline | Child Step Function ARN for per-ticker pipeline |
 | `API_PORT` | api server | HTTP server port (default: 8080) |

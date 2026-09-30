@@ -78,6 +78,8 @@ All configuration via environment variables (12-factor):
 | `DATABASE_URL` | Yes      | —             | PostgreSQL connection string |
 | `API_PORT`     | No       | `8080`        | HTTP server port           |
 | `APP_ENV`      | No       | `development` | Environment name           |
+| `DB_SECRET_ARN` | No (Lambdas only) | unset | ARN of a Secrets Manager JSON `{username,password}` secret. When set, the Lambda resolves DB credentials from it and `DATABASE_URL` is used credential-free; when unset, `DATABASE_URL` is used as-is. |
+| `MASSIVE_API_KEY_SECRET_ARN` | No (Lambdas only) | unset | ARN of a Secrets Manager plain-string secret holding the Massive API key. When set, it wins over `MASSIVE_API_KEY`; when unset, `MASSIVE_API_KEY` is used as-is. |
 
 ## Go Conventions
 
