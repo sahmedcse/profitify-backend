@@ -11,6 +11,7 @@ import (
 var lambdaEnvKeys = []string{
 	"DATABASE_URL", "API_PORT", "APP_ENV", "DB_POOL_MAX_CONNS",
 	"MASSIVE_API_KEY", "SQS_QUEUE_URL", "TICKER_LIMIT", "TICKER_ALLOWLIST", "SFN_ARN",
+	"DB_SECRET_ARN", "MASSIVE_API_KEY_SECRET_ARN",
 }
 
 // ClearEnv blanks every configuration variable so a test starts from a known

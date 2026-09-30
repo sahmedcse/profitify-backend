@@ -11,6 +11,8 @@ import (
 func TestClearEnv(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://should-be-cleared/db")
 	t.Setenv("MASSIVE_API_KEY", "should-be-cleared")
+	t.Setenv("DB_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:1:secret:db-should-be-cleared")
+	t.Setenv("MASSIVE_API_KEY_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:1:secret:massive-should-be-cleared")
 
 	ClearEnv(t)
 
