@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"github.com/profitify/profitify-backend/internal/config"
-	"github.com/profitify/profitify-backend/internal/db"
 	"github.com/profitify/profitify-backend/internal/domain"
 	lambdautil "github.com/profitify/profitify-backend/internal/lambda"
 	"github.com/profitify/profitify-backend/internal/massive"
@@ -200,13 +199,18 @@ func handleRequest(ctx context.Context, event pipeline.TickerEvent) (*Response, 
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
 
-	pool, err := db.New(ctx, cfg.DatabaseURL, db.WithMaxConns(int32(cfg.PoolMaxConns)))
+	pool, err := lambdautil.ConnectDB(ctx, cfg.DatabaseURL, cfg.DBSecretARN, cfg.PoolMaxConns)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to database: %w", err)
 	}
 	defer pool.Close()
 
-	client := massive.NewClient(cfg.MassiveAPIKey, logger)
+	apiKey, err := lambdautil.MassiveAPIKey(ctx, cfg.MassiveAPIKey, cfg.MassiveAPIKeySecretARN)
+	if err != nil {
+		return nil, fmt.Errorf("resolving Massive API key: %w", err)
+	}
+
+	client := massive.NewClient(apiKey, logger)
 	techRepo := repository.NewTickerTechnicalsRepo(pool, logger)
 	statsRepo := repository.NewTickerStatsRepo(pool, logger)
 	stageRepo := repository.NewPipelineTickerStageRepo(pool, logger)
