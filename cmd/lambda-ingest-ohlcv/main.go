@@ -16,6 +16,13 @@ import (
 	"github.com/profitify/profitify-backend/internal/repository"
 )
 
+// connectDB and resolveMassiveAPIKey are variables so tests can substitute a
+// fake instead of dialing a real database or calling Secrets Manager.
+var (
+	connectDB            = lambdautil.ConnectDB
+	resolveMassiveAPIKey = lambdautil.MassiveAPIKey
+)
+
 // stageTracker abstracts pipeline stage tracking for testing.
 type stageTracker interface {
 	MarkRunning(ctx context.Context, runID, tickerID, stage string) (string, error)
@@ -87,13 +94,13 @@ func handleRequest(ctx context.Context, event pipeline.TickerEvent) (*Response, 
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
 
-	pool, err := lambdautil.ConnectDB(ctx, cfg.DatabaseURL, cfg.DBSecretARN, cfg.PoolMaxConns)
+	pool, err := connectDB(ctx, cfg.DatabaseURL, cfg.DBSecretARN, cfg.PoolMaxConns)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to database: %w", err)
 	}
 	defer pool.Close()
 
-	apiKey, err := lambdautil.MassiveAPIKey(ctx, cfg.MassiveAPIKey, cfg.MassiveAPIKeySecretARN)
+	apiKey, err := resolveMassiveAPIKey(ctx, cfg.MassiveAPIKey, cfg.MassiveAPIKeySecretARN)
 	if err != nil {
 		return nil, fmt.Errorf("resolving Massive API key: %w", err)
 	}
