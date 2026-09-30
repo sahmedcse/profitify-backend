@@ -130,6 +130,7 @@ func clearEnv(t *testing.T) {
 	for _, k := range []string{
 		"DATABASE_URL", "API_PORT", "APP_ENV", "DB_POOL_MAX_CONNS",
 		"MASSIVE_API_KEY", "SQS_QUEUE_URL", "TICKER_LIMIT", "TICKER_ALLOWLIST", "SFN_ARN",
+		"DB_SECRET_ARN", "MASSIVE_API_KEY_SECRET_ARN",
 	} {
 		t.Setenv(k, "")
 	}
@@ -358,8 +359,9 @@ func TestLoadStartPipeline(t *testing.T) {
 	})
 }
 
-// dbAndKeyLoader describes the five loaders that all read DATABASE_URL,
-// MASSIVE_API_KEY and DB_POOL_MAX_CONNS into an identically shaped config.
+// dbAndKeyLoader describes the four loaders (excluding LoadEnrichTicker,
+// which never reads MASSIVE_API_KEY) that read DATABASE_URL, MASSIVE_API_KEY
+// and DB_POOL_MAX_CONNS into an identically shaped config.
 type dbAndKeyLoader struct {
 	name string
 	load func() (dbURL, apiKey string, poolMax int, err error)
@@ -383,13 +385,6 @@ func dbAndKeyLoaders() []dbAndKeyLoader {
 		}},
 		{name: "LoadFetchFundamentals", load: func() (string, string, int, error) {
 			c, err := LoadFetchFundamentals()
-			if err != nil {
-				return "", "", 0, err
-			}
-			return c.DatabaseURL, c.MassiveAPIKey, c.PoolMaxConns, nil
-		}},
-		{name: "LoadEnrichTicker", load: func() (string, string, int, error) {
-			c, err := LoadEnrichTicker()
 			if err != nil {
 				return "", "", 0, err
 			}
@@ -510,4 +505,298 @@ func TestLoadClosePipeline(t *testing.T) {
 			t.Fatal("LoadClosePipeline() error = nil, want error")
 		}
 	})
+}
+
+func TestLoadEnrichTicker_DoesNotRequireMassiveAPIKey(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("DATABASE_URL", "postgres://localhost/db")
+	// Deliberately left unset: enrich-ticker never builds a Massive client,
+	// so neither MASSIVE_API_KEY nor its secret ARN variant is required.
+
+	cfg, err := LoadEnrichTicker()
+	if err != nil {
+		t.Fatalf("LoadEnrichTicker() error = %v, want success without a Massive key", err)
+	}
+	if cfg.DatabaseURL != "postgres://localhost/db" {
+		t.Errorf("DatabaseURL = %q", cfg.DatabaseURL)
+	}
+	if cfg.PoolMaxConns != 1 {
+		t.Errorf("PoolMaxConns = %d, want default 1", cfg.PoolMaxConns)
+	}
+}
+
+// keyLoaderResult captures the Massive-key-related fields shared by every
+// config struct that can build a Massive client.
+type keyLoaderResult struct {
+	massiveAPIKey    string
+	massiveSecretARN string
+}
+
+// keyLoader describes one of the five loaders that require MASSIVE_API_KEY
+// or MASSIVE_API_KEY_SECRET_ARN. Each load func also sets any other env vars
+// it needs beyond DATABASE_URL and the Massive key (e.g. SQS_QUEUE_URL).
+type keyLoader struct {
+	name        string
+	setExtraEnv func(t *testing.T)
+	load        func() (keyLoaderResult, error)
+}
+
+func keyLoaders() []keyLoader {
+	return []keyLoader{
+		{
+			name:        "LoadFetchTickers",
+			setExtraEnv: func(t *testing.T) { t.Setenv("SQS_QUEUE_URL", "https://sqs/q") },
+			load: func() (keyLoaderResult, error) {
+				c, err := LoadFetchTickers()
+				if err != nil {
+					return keyLoaderResult{}, err
+				}
+				return keyLoaderResult{massiveAPIKey: c.MassiveAPIKey, massiveSecretARN: c.MassiveAPIKeySecretARN}, nil
+			},
+		},
+		{
+			name:        "LoadIngestOHLCV",
+			setExtraEnv: func(t *testing.T) {},
+			load: func() (keyLoaderResult, error) {
+				c, err := LoadIngestOHLCV()
+				if err != nil {
+					return keyLoaderResult{}, err
+				}
+				return keyLoaderResult{massiveAPIKey: c.MassiveAPIKey, massiveSecretARN: c.MassiveAPIKeySecretARN}, nil
+			},
+		},
+		{
+			name:        "LoadFetchTechnicals",
+			setExtraEnv: func(t *testing.T) {},
+			load: func() (keyLoaderResult, error) {
+				c, err := LoadFetchTechnicals()
+				if err != nil {
+					return keyLoaderResult{}, err
+				}
+				return keyLoaderResult{massiveAPIKey: c.MassiveAPIKey, massiveSecretARN: c.MassiveAPIKeySecretARN}, nil
+			},
+		},
+		{
+			name:        "LoadFetchFundamentals",
+			setExtraEnv: func(t *testing.T) {},
+			load: func() (keyLoaderResult, error) {
+				c, err := LoadFetchFundamentals()
+				if err != nil {
+					return keyLoaderResult{}, err
+				}
+				return keyLoaderResult{massiveAPIKey: c.MassiveAPIKey, massiveSecretARN: c.MassiveAPIKeySecretARN}, nil
+			},
+		},
+		{
+			name:        "LoadComputeStats",
+			setExtraEnv: func(t *testing.T) {},
+			load: func() (keyLoaderResult, error) {
+				c, err := LoadComputeStats()
+				if err != nil {
+					return keyLoaderResult{}, err
+				}
+				return keyLoaderResult{massiveAPIKey: c.MassiveAPIKey, massiveSecretARN: c.MassiveAPIKeySecretARN}, nil
+			},
+		},
+	}
+}
+
+func TestKeyLoaders_MassiveAPIKeyOrSecretARN(t *testing.T) {
+	const secretARN = "arn:aws:secretsmanager:us-east-1:1:secret:massive"
+
+	for _, l := range keyLoaders() {
+		t.Run(l.name, func(t *testing.T) {
+			t.Run("secret ARN alone succeeds", func(t *testing.T) {
+				clearEnv(t)
+				t.Setenv("DATABASE_URL", "postgres://localhost/db")
+				l.setExtraEnv(t)
+				t.Setenv("MASSIVE_API_KEY_SECRET_ARN", secretARN)
+
+				res, err := l.load()
+				if err != nil {
+					t.Fatalf("%s() error = %v", l.name, err)
+				}
+				if res.massiveSecretARN != secretARN {
+					t.Errorf("MassiveAPIKeySecretARN = %q, want %q", res.massiveSecretARN, secretARN)
+				}
+				if res.massiveAPIKey != "" {
+					t.Errorf("MassiveAPIKey = %q, want empty when only the secret ARN is set", res.massiveAPIKey)
+				}
+			})
+
+			t.Run("env key alone succeeds", func(t *testing.T) {
+				clearEnv(t)
+				t.Setenv("DATABASE_URL", "postgres://localhost/db")
+				l.setExtraEnv(t)
+				t.Setenv("MASSIVE_API_KEY", "key")
+
+				res, err := l.load()
+				if err != nil {
+					t.Fatalf("%s() error = %v", l.name, err)
+				}
+				if res.massiveAPIKey != "key" {
+					t.Errorf("MassiveAPIKey = %q, want key", res.massiveAPIKey)
+				}
+				if res.massiveSecretARN != "" {
+					t.Errorf("MassiveAPIKeySecretARN = %q, want empty when only the env var is set", res.massiveSecretARN)
+				}
+			})
+
+			t.Run("neither gives the or error", func(t *testing.T) {
+				clearEnv(t)
+				t.Setenv("DATABASE_URL", "postgres://localhost/db")
+				l.setExtraEnv(t)
+
+				_, err := l.load()
+				if err == nil {
+					t.Fatalf("%s() error = nil, want error when neither is set", l.name)
+				}
+				if !strings.Contains(err.Error(), "MASSIVE_API_KEY or MASSIVE_API_KEY_SECRET_ARN is required") {
+					t.Errorf("error = %q, want the shared 'or' message", err.Error())
+				}
+			})
+		})
+	}
+}
+
+// dbSecretARNLoader describes one of the eight Lambda config loaders, all of
+// which gain an optional DBSecretARN field.
+type dbSecretARNLoader struct {
+	name        string
+	setExtraEnv func(t *testing.T)
+	load        func() (string, error) // returns DBSecretARN
+}
+
+func dbSecretARNLoaders() []dbSecretARNLoader {
+	withMassiveKey := func(t *testing.T) { t.Setenv("MASSIVE_API_KEY", "key") }
+	return []dbSecretARNLoader{
+		{
+			name: "LoadFetchTickers",
+			setExtraEnv: func(t *testing.T) {
+				t.Setenv("SQS_QUEUE_URL", "https://sqs/q")
+				withMassiveKey(t)
+			},
+			load: func() (string, error) {
+				c, err := LoadFetchTickers()
+				if err != nil {
+					return "", err
+				}
+				return c.DBSecretARN, nil
+			},
+		},
+		{
+			name:        "LoadStartPipeline",
+			setExtraEnv: func(t *testing.T) { t.Setenv("SFN_ARN", "arn:aws:states:::sm") },
+			load: func() (string, error) {
+				c, err := LoadStartPipeline()
+				if err != nil {
+					return "", err
+				}
+				return c.DBSecretARN, nil
+			},
+		},
+		{
+			name:        "LoadIngestOHLCV",
+			setExtraEnv: withMassiveKey,
+			load: func() (string, error) {
+				c, err := LoadIngestOHLCV()
+				if err != nil {
+					return "", err
+				}
+				return c.DBSecretARN, nil
+			},
+		},
+		{
+			name:        "LoadFetchTechnicals",
+			setExtraEnv: withMassiveKey,
+			load: func() (string, error) {
+				c, err := LoadFetchTechnicals()
+				if err != nil {
+					return "", err
+				}
+				return c.DBSecretARN, nil
+			},
+		},
+		{
+			name:        "LoadFetchFundamentals",
+			setExtraEnv: withMassiveKey,
+			load: func() (string, error) {
+				c, err := LoadFetchFundamentals()
+				if err != nil {
+					return "", err
+				}
+				return c.DBSecretARN, nil
+			},
+		},
+		{
+			name:        "LoadEnrichTicker",
+			setExtraEnv: func(t *testing.T) {},
+			load: func() (string, error) {
+				c, err := LoadEnrichTicker()
+				if err != nil {
+					return "", err
+				}
+				return c.DBSecretARN, nil
+			},
+		},
+		{
+			name:        "LoadComputeStats",
+			setExtraEnv: withMassiveKey,
+			load: func() (string, error) {
+				c, err := LoadComputeStats()
+				if err != nil {
+					return "", err
+				}
+				return c.DBSecretARN, nil
+			},
+		},
+		{
+			name:        "LoadClosePipeline",
+			setExtraEnv: func(t *testing.T) {},
+			load: func() (string, error) {
+				c, err := LoadClosePipeline()
+				if err != nil {
+					return "", err
+				}
+				return c.DBSecretARN, nil
+			},
+		},
+	}
+}
+
+func TestDBSecretARN_PopulatedOrEmpty(t *testing.T) {
+	const arn = "arn:aws:secretsmanager:us-east-1:1:secret:db-admin"
+
+	for _, l := range dbSecretARNLoaders() {
+		t.Run(l.name, func(t *testing.T) {
+			t.Run("set", func(t *testing.T) {
+				clearEnv(t)
+				t.Setenv("DATABASE_URL", "postgres://localhost/db")
+				l.setExtraEnv(t)
+				t.Setenv("DB_SECRET_ARN", arn)
+
+				got, err := l.load()
+				if err != nil {
+					t.Fatalf("%s() error = %v", l.name, err)
+				}
+				if got != arn {
+					t.Errorf("DBSecretARN = %q, want %q", got, arn)
+				}
+			})
+
+			t.Run("unset", func(t *testing.T) {
+				clearEnv(t)
+				t.Setenv("DATABASE_URL", "postgres://localhost/db")
+				l.setExtraEnv(t)
+
+				got, err := l.load()
+				if err != nil {
+					t.Fatalf("%s() error = %v", l.name, err)
+				}
+				if got != "" {
+					t.Errorf("DBSecretARN = %q, want empty", got)
+				}
+			})
+		})
+	}
 }

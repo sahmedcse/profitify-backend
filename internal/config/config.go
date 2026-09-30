@@ -33,17 +33,19 @@ func Load() (*Config, error) {
 
 // FetchTickersConfig holds configuration for the fetch-tickers Lambda.
 type FetchTickersConfig struct {
-	MassiveAPIKey   string
-	SQSQueueURL     string
-	TickerLimit     int
-	TickerAllowlist []string
-	DatabaseURL     string
-	PoolMaxConns    int
+	MassiveAPIKey          string
+	MassiveAPIKeySecretARN string
+	SQSQueueURL            string
+	TickerLimit            int
+	TickerAllowlist        []string
+	DatabaseURL            string
+	DBSecretARN            string
+	PoolMaxConns           int
 }
 
 // LoadFetchTickers reads fetch-tickers Lambda configuration.
 func LoadFetchTickers() (*FetchTickersConfig, error) {
-	apiKey, err := required("MASSIVE_API_KEY")
+	apiKey, apiKeySecretARN, err := requiredMassiveAPIKey()
 	if err != nil {
 		return nil, err
 	}
@@ -57,18 +59,21 @@ func LoadFetchTickers() (*FetchTickersConfig, error) {
 	}
 
 	return &FetchTickersConfig{
-		MassiveAPIKey:   apiKey,
-		SQSQueueURL:     sqsURL,
-		TickerLimit:     intOrDefault("TICKER_LIMIT", 0),
-		TickerAllowlist: csvToSlice("TICKER_ALLOWLIST"),
-		DatabaseURL:     dbURL,
-		PoolMaxConns:    intOrDefault("DB_POOL_MAX_CONNS", 1),
+		MassiveAPIKey:          apiKey,
+		MassiveAPIKeySecretARN: apiKeySecretARN,
+		SQSQueueURL:            sqsURL,
+		TickerLimit:            intOrDefault("TICKER_LIMIT", 0),
+		TickerAllowlist:        csvToSlice("TICKER_ALLOWLIST"),
+		DatabaseURL:            dbURL,
+		DBSecretARN:            os.Getenv("DB_SECRET_ARN"),
+		PoolMaxConns:           intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
 // StartPipelineConfig holds configuration for the start-pipeline Lambda.
 type StartPipelineConfig struct {
 	DatabaseURL  string
+	DBSecretARN  string
 	SFNArn       string
 	PoolMaxConns int
 }
@@ -86,6 +91,7 @@ func LoadStartPipeline() (*StartPipelineConfig, error) {
 
 	return &StartPipelineConfig{
 		DatabaseURL:  dbURL,
+		DBSecretARN:  os.Getenv("DB_SECRET_ARN"),
 		SFNArn:       sfnArn,
 		PoolMaxConns: intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
@@ -93,9 +99,11 @@ func LoadStartPipeline() (*StartPipelineConfig, error) {
 
 // IngestOHLCVConfig holds configuration for the ingest-ohlcv Lambda.
 type IngestOHLCVConfig struct {
-	DatabaseURL   string
-	MassiveAPIKey string
-	PoolMaxConns  int
+	DatabaseURL            string
+	DBSecretARN            string
+	MassiveAPIKey          string
+	MassiveAPIKeySecretARN string
+	PoolMaxConns           int
 }
 
 // LoadIngestOHLCV reads ingest-ohlcv Lambda configuration.
@@ -104,23 +112,27 @@ func LoadIngestOHLCV() (*IngestOHLCVConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := required("MASSIVE_API_KEY")
+	apiKey, apiKeySecretARN, err := requiredMassiveAPIKey()
 	if err != nil {
 		return nil, err
 	}
 
 	return &IngestOHLCVConfig{
-		DatabaseURL:   dbURL,
-		MassiveAPIKey: apiKey,
-		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
+		DatabaseURL:            dbURL,
+		DBSecretARN:            os.Getenv("DB_SECRET_ARN"),
+		MassiveAPIKey:          apiKey,
+		MassiveAPIKeySecretARN: apiKeySecretARN,
+		PoolMaxConns:           intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
 // FetchTechnicalsConfig holds configuration for the fetch-technicals Lambda.
 type FetchTechnicalsConfig struct {
-	DatabaseURL   string
-	MassiveAPIKey string
-	PoolMaxConns  int
+	DatabaseURL            string
+	DBSecretARN            string
+	MassiveAPIKey          string
+	MassiveAPIKeySecretARN string
+	PoolMaxConns           int
 }
 
 // LoadFetchTechnicals reads fetch-technicals Lambda configuration.
@@ -129,23 +141,27 @@ func LoadFetchTechnicals() (*FetchTechnicalsConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := required("MASSIVE_API_KEY")
+	apiKey, apiKeySecretARN, err := requiredMassiveAPIKey()
 	if err != nil {
 		return nil, err
 	}
 
 	return &FetchTechnicalsConfig{
-		DatabaseURL:   dbURL,
-		MassiveAPIKey: apiKey,
-		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
+		DatabaseURL:            dbURL,
+		DBSecretARN:            os.Getenv("DB_SECRET_ARN"),
+		MassiveAPIKey:          apiKey,
+		MassiveAPIKeySecretARN: apiKeySecretARN,
+		PoolMaxConns:           intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
 // FetchFundamentalsConfig holds configuration for the fetch-fundamentals Lambda.
 type FetchFundamentalsConfig struct {
-	DatabaseURL   string
-	MassiveAPIKey string
-	PoolMaxConns  int
+	DatabaseURL            string
+	DBSecretARN            string
+	MassiveAPIKey          string
+	MassiveAPIKeySecretARN string
+	PoolMaxConns           int
 }
 
 // LoadFetchFundamentals reads fetch-fundamentals Lambda configuration.
@@ -154,23 +170,26 @@ func LoadFetchFundamentals() (*FetchFundamentalsConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := required("MASSIVE_API_KEY")
+	apiKey, apiKeySecretARN, err := requiredMassiveAPIKey()
 	if err != nil {
 		return nil, err
 	}
 
 	return &FetchFundamentalsConfig{
-		DatabaseURL:   dbURL,
-		MassiveAPIKey: apiKey,
-		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
+		DatabaseURL:            dbURL,
+		DBSecretARN:            os.Getenv("DB_SECRET_ARN"),
+		MassiveAPIKey:          apiKey,
+		MassiveAPIKeySecretARN: apiKeySecretARN,
+		PoolMaxConns:           intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
-// EnrichTickerConfig holds configuration for the enrich-ticker Lambda.
+// EnrichTickerConfig holds configuration for the enrich-ticker Lambda. It
+// never builds a Massive client, so it has no Massive API key field.
 type EnrichTickerConfig struct {
-	DatabaseURL   string
-	MassiveAPIKey string
-	PoolMaxConns  int
+	DatabaseURL  string
+	DBSecretARN  string
+	PoolMaxConns int
 }
 
 // LoadEnrichTicker reads enrich-ticker Lambda configuration.
@@ -179,23 +198,21 @@ func LoadEnrichTicker() (*EnrichTickerConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := required("MASSIVE_API_KEY")
-	if err != nil {
-		return nil, err
-	}
 
 	return &EnrichTickerConfig{
-		DatabaseURL:   dbURL,
-		MassiveAPIKey: apiKey,
-		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
+		DatabaseURL:  dbURL,
+		DBSecretARN:  os.Getenv("DB_SECRET_ARN"),
+		PoolMaxConns: intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
 // ComputeStatsConfig holds configuration for the compute-stats Lambda.
 type ComputeStatsConfig struct {
-	DatabaseURL   string
-	MassiveAPIKey string
-	PoolMaxConns  int
+	DatabaseURL            string
+	DBSecretARN            string
+	MassiveAPIKey          string
+	MassiveAPIKeySecretARN string
+	PoolMaxConns           int
 }
 
 // LoadComputeStats reads compute-stats Lambda configuration.
@@ -204,21 +221,24 @@ func LoadComputeStats() (*ComputeStatsConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := required("MASSIVE_API_KEY")
+	apiKey, apiKeySecretARN, err := requiredMassiveAPIKey()
 	if err != nil {
 		return nil, err
 	}
 
 	return &ComputeStatsConfig{
-		DatabaseURL:   dbURL,
-		MassiveAPIKey: apiKey,
-		PoolMaxConns:  intOrDefault("DB_POOL_MAX_CONNS", 1),
+		DatabaseURL:            dbURL,
+		DBSecretARN:            os.Getenv("DB_SECRET_ARN"),
+		MassiveAPIKey:          apiKey,
+		MassiveAPIKeySecretARN: apiKeySecretARN,
+		PoolMaxConns:           intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
 
 // ClosePipelineConfig holds configuration for the close-pipeline Lambda.
 type ClosePipelineConfig struct {
 	DatabaseURL  string
+	DBSecretARN  string
 	PoolMaxConns int
 }
 
@@ -231,6 +251,7 @@ func LoadClosePipeline() (*ClosePipelineConfig, error) {
 
 	return &ClosePipelineConfig{
 		DatabaseURL:  dbURL,
+		DBSecretARN:  os.Getenv("DB_SECRET_ARN"),
 		PoolMaxConns: intOrDefault("DB_POOL_MAX_CONNS", 1),
 	}, nil
 }
@@ -241,6 +262,21 @@ func required(key string) (string, error) {
 		return "", fmt.Errorf("config: %s is required", key)
 	}
 	return v, nil
+}
+
+// requiredMassiveAPIKey reads MASSIVE_API_KEY and MASSIVE_API_KEY_SECRET_ARN,
+// requiring at least one to be set. It is shared by every Lambda config
+// loader that builds a Massive client (fetch-tickers, ingest-ohlcv,
+// fetch-technicals, fetch-fundamentals, compute-stats). Either value may be
+// returned empty; the caller (via internal/lambda.MassiveAPIKey) prefers the
+// secret when both are set.
+func requiredMassiveAPIKey() (apiKey, secretARN string, err error) {
+	apiKey = os.Getenv("MASSIVE_API_KEY")
+	secretARN = os.Getenv("MASSIVE_API_KEY_SECRET_ARN")
+	if apiKey == "" && secretARN == "" {
+		return "", "", fmt.Errorf("config: MASSIVE_API_KEY or MASSIVE_API_KEY_SECRET_ARN is required")
+	}
+	return apiKey, secretARN, nil
 }
 
 func intOrDefault(key string, fallback int) int {
