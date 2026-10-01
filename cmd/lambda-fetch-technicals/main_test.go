@@ -2,14 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/profitify/profitify-backend/internal/domain"
 	"github.com/profitify/profitify-backend/internal/pipeline"
+	"github.com/profitify/profitify-backend/internal/testutil"
 )
 
 var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -209,5 +214,35 @@ func TestHandleRequest_MissingAPIKey(t *testing.T) {
 	_, err := handleRequest(context.Background(), event)
 	if err == nil {
 		t.Fatal("expected error for missing MASSIVE_API_KEY")
+	}
+}
+
+// TestHandleRequest_ResolvingMassiveAPIKeyError exercises the
+// "resolving Massive API key: %w" branch: config load and ConnectDB both
+// succeed (the latter via a faked connectDB backed by testutil.FakePool, so
+// no real database is dialed), and resolveMassiveAPIKey itself fails.
+func TestHandleRequest_ResolvingMassiveAPIKeyError(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("MASSIVE_API_KEY", "test-key")
+
+	origConnect := connectDB
+	connectDB = func(_ context.Context, _, _ string, _ int) (*pgxpool.Pool, error) {
+		return testutil.FakePool(t), nil
+	}
+	t.Cleanup(func() { connectDB = origConnect })
+
+	origKey := resolveMassiveAPIKey
+	resolveMassiveAPIKey = func(context.Context, string, string) (string, error) {
+		return "", errors.New("secrets: get secret value for arn: access denied")
+	}
+	t.Cleanup(func() { resolveMassiveAPIKey = origKey })
+
+	event := pipeline.TickerEvent{Ticker: "AAPL", TickerID: "uuid-123", Date: "2026-04-08"}
+	_, err := handleRequest(context.Background(), event)
+	if err == nil {
+		t.Fatal("handleRequest() error = nil, want the Massive key resolution error")
+	}
+	if !strings.Contains(err.Error(), "resolving Massive API key:") {
+		t.Errorf("error = %q, want it wrapped as 'resolving Massive API key: ...'", err.Error())
 	}
 }
