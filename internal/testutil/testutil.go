@@ -53,21 +53,32 @@ func UnreachableDSN(t *testing.T) string {
 	)
 }
 
-// FakePool returns a non-nil *pgxpool.Pool that has never dialed a real
-// database. pgxpool.NewWithConfig only connects lazily (on first Acquire),
-// so this is safe and fast to construct and Close in tests that need a
-// "successfully connected" pool — e.g. to exercise the code after a
-// ConnectDB seam succeeds — without a real Postgres instance. It must not
-// be used for anything that actually queries it.
-func FakePool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	cfg, err := pgxpool.ParseConfig("postgres://user:pass@127.0.0.1:1/testdb?sslmode=disable")
+// newLazyPool parses dsn and constructs a *pgxpool.Pool that has never
+// dialed a real database. pgxpool.NewWithConfig only connects lazily (on
+// first Acquire), so this is safe and fast to construct in tests that need
+// a "successfully connected" pool without a real Postgres instance.
+// Extracted from FakePool so its error paths — unreachable through a
+// hardcoded, always-valid DSN — are directly testable.
+func newLazyPool(dsn string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		t.Fatalf("FakePool: parsing config: %v", err)
+		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
 	if err != nil {
-		t.Fatalf("FakePool: creating pool: %v", err)
+		return nil, fmt.Errorf("creating pool: %w", err)
+	}
+	return pool, nil
+}
+
+// FakePool returns a non-nil *pgxpool.Pool that has never dialed a real
+// database. It must not be used for anything that actually queries it —
+// e.g. to exercise the code after a ConnectDB seam succeeds.
+func FakePool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool, err := newLazyPool("postgres://user:pass@127.0.0.1:1/testdb?sslmode=disable")
+	if err != nil {
+		t.Fatalf("FakePool: %v", err)
 	}
 	t.Cleanup(pool.Close)
 	return pool

@@ -53,6 +53,16 @@ func TestClosedPortAddr_ReturnsDistinctPorts(t *testing.T) {
 	}
 }
 
+func TestNewLazyPool_UnparseableDSN(t *testing.T) {
+	_, err := newLazyPool("not-a-valid-dsn://:::")
+	if err == nil {
+		t.Fatal("newLazyPool() error = nil, want a parse error for an unparseable DSN")
+	}
+	if !strings.Contains(err.Error(), "parsing config:") {
+		t.Errorf("error = %q, want it wrapped as 'parsing config: ...'", err.Error())
+	}
+}
+
 func TestFakePool_ReturnsQuicklyWithoutDialing(t *testing.T) {
 	start := time.Now()
 	pool := FakePool(t)
