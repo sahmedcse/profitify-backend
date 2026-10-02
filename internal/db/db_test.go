@@ -188,13 +188,13 @@ func TestApplyCredentials_SetsUserAndPassword(t *testing.T) {
 		t.Fatalf("ParseConfig() error = %v", err)
 	}
 
-	src := &testutil.FakeCredentialSource{Username: "profitify_admin", Password: reservedPassword}
+	src := &testutil.FakeCredentialSource{Username: "test_user", Password: reservedPassword}
 	if err := applyCredentials(context.Background(), cfg, src); err != nil {
 		t.Fatalf("applyCredentials() error = %v", err)
 	}
 
-	if cfg.ConnConfig.User != "profitify_admin" {
-		t.Errorf("User = %q, want profitify_admin", cfg.ConnConfig.User)
+	if cfg.ConnConfig.User != "test_user" {
+		t.Errorf("User = %q, want test_user", cfg.ConnConfig.User)
 	}
 	if cfg.ConnConfig.Password != reservedPassword {
 		t.Errorf("Password = %q, want %q", cfg.ConnConfig.Password, reservedPassword)
@@ -254,7 +254,7 @@ func TestNewWithCredentials_PingFailure_InvalidatesAndRedacts(t *testing.T) {
 
 	const password = `p#ss@w:rd/x?y%z&a=b`
 	connStr := fmt.Sprintf("postgres://%s/testdb?sslmode=disable&connect_timeout=2", testutil.ClosedPortAddr(t))
-	src := &testutil.FakeCredentialSource{Username: "profitify_admin", Password: password}
+	src := &testutil.FakeCredentialSource{Username: "test_user", Password: password}
 
 	pool, err := NewWithCredentials(ctx, connStr, src)
 	if err == nil {

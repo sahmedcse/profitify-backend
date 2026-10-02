@@ -11,7 +11,7 @@ import (
 
 func TestDBSecret_Credentials_ReturnsUsernameAndPassword(t *testing.T) {
 	const password = `p#a%ss:w/rd?x@y&z=1`
-	raw := fmt.Sprintf(`{"username":"profitify_admin","password":%q}`, password)
+	raw := fmt.Sprintf(`{"username":"test_user","password":%q}`, password)
 	api := okStub(raw)
 
 	s := NewDBSecret("arn:aws:secretsmanager:us-east-1:1:secret:db", api)
@@ -19,8 +19,8 @@ func TestDBSecret_Credentials_ReturnsUsernameAndPassword(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Credentials() error = %v", err)
 	}
-	if username != "profitify_admin" {
-		t.Errorf("username = %q, want profitify_admin", username)
+	if username != "test_user" {
+		t.Errorf("username = %q, want test_user", username)
 	}
 	if gotPassword != password {
 		t.Errorf("password = %q, want %q", gotPassword, password)
