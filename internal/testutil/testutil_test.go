@@ -11,6 +11,8 @@ import (
 func TestClearEnv(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://should-be-cleared/db")
 	t.Setenv("MASSIVE_API_KEY", "should-be-cleared")
+	t.Setenv("DB_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:1:secret:db-should-be-cleared")
+	t.Setenv("MASSIVE_API_KEY_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:1:secret:massive-should-be-cleared")
 
 	ClearEnv(t)
 
@@ -48,6 +50,29 @@ func TestClosedPortAddr_ReturnsDistinctPorts(t *testing.T) {
 	second := ClosedPortAddr(t)
 	if first == second {
 		t.Errorf("consecutive calls handed back the same port twice: %s", first)
+	}
+}
+
+func TestNewLazyPool_UnparseableDSN(t *testing.T) {
+	_, err := newLazyPool("not-a-valid-dsn://:::")
+	if err == nil {
+		t.Fatal("newLazyPool() error = nil, want a parse error for an unparseable DSN")
+	}
+	if !strings.Contains(err.Error(), "parsing config:") {
+		t.Errorf("error = %q, want it wrapped as 'parsing config: ...'", err.Error())
+	}
+}
+
+func TestFakePool_ReturnsQuicklyWithoutDialing(t *testing.T) {
+	start := time.Now()
+	pool := FakePool(t)
+	if pool == nil {
+		t.Fatal("FakePool(t) returned nil")
+	}
+	// pgxpool.NewWithConfig only connects lazily, so this must return almost
+	// immediately rather than waiting on a real (or fake, unreachable) dial.
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("FakePool(t) took %v, want it to return without dialing", elapsed)
 	}
 }
 

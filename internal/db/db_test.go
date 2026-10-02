@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/profitify/profitify-backend/internal/testutil"
 )
 
 func TestParseConfig_SimpleProtocol(t *testing.T) {
@@ -159,5 +162,114 @@ func TestMigrate_UnreachableDatabase(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "migrate: failed to run migrations") {
 		t.Errorf("error = %q, want the migration failure wrapped", err.Error())
+	}
+}
+
+func TestParseConfig_CredentialFreeURL(t *testing.T) {
+	// A credential-free URL (no userinfo, no '@') is what ops sets in AWS
+	// once DB_SECRET_ARN supplies the credentials. ParseConfig must not
+	// depend on an OS-user lookup to fill in a default username.
+	cfg, err := ParseConfig("postgres://db-host.internal:5432/profitify?sslmode=disable")
+	if err != nil {
+		t.Fatalf("ParseConfig() error = %v", err)
+	}
+	if cfg.ConnConfig.Host != "db-host.internal" {
+		t.Errorf("Host = %q, want db-host.internal", cfg.ConnConfig.Host)
+	}
+	if cfg.ConnConfig.Database != "profitify" {
+		t.Errorf("Database = %q, want profitify", cfg.ConnConfig.Database)
+	}
+}
+
+func TestApplyCredentials_SetsUserAndPassword(t *testing.T) {
+	const reservedPassword = `p#ss@w:rd/x?y%z&a=b`
+	cfg, err := ParseConfig("postgres://db-host.internal:5432/profitify?sslmode=disable")
+	if err != nil {
+		t.Fatalf("ParseConfig() error = %v", err)
+	}
+
+	src := &testutil.FakeCredentialSource{Username: "test_user", Password: reservedPassword}
+	if err := applyCredentials(context.Background(), cfg, src); err != nil {
+		t.Fatalf("applyCredentials() error = %v", err)
+	}
+
+	if cfg.ConnConfig.User != "test_user" {
+		t.Errorf("User = %q, want test_user", cfg.ConnConfig.User)
+	}
+	if cfg.ConnConfig.Password != reservedPassword {
+		t.Errorf("Password = %q, want %q", cfg.ConnConfig.Password, reservedPassword)
+	}
+}
+
+func TestApplyCredentials_SourceError_LeavesConfigUntouched(t *testing.T) {
+	cfg, err := ParseConfig("postgres://db-host.internal:5432/profitify?sslmode=disable")
+	if err != nil {
+		t.Fatalf("ParseConfig() error = %v", err)
+	}
+	cfg.ConnConfig.User = "original-user"
+	cfg.ConnConfig.Password = "original-password"
+
+	src := &testutil.FakeCredentialSource{Err: errors.New("secrets: get secret value for arn: boom")}
+	err = applyCredentials(context.Background(), cfg, src)
+	if err == nil {
+		t.Fatal("applyCredentials() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "db: failed to resolve credentials") {
+		t.Errorf("error = %q, want it wrapped with context", err.Error())
+	}
+	if cfg.ConnConfig.User != "original-user" {
+		t.Errorf("User = %q, want it untouched at original-user", cfg.ConnConfig.User)
+	}
+	if cfg.ConnConfig.Password != "original-password" {
+		t.Errorf("Password = %q, want it untouched at original-password", cfg.ConnConfig.Password)
+	}
+}
+
+func TestNewWithCredentials_SourceError_DoesNotConnect(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	src := &testutil.FakeCredentialSource{Err: errors.New("secrets: get secret value for arn: boom")}
+	pool, err := NewWithCredentials(ctx, "postgres://db-host.internal:5432/profitify?sslmode=disable", src)
+	if err == nil {
+		if pool != nil {
+			pool.Close()
+		}
+		t.Fatal("NewWithCredentials() error = nil, want a credential resolution error")
+	}
+	if pool != nil {
+		t.Error("NewWithCredentials() returned a pool alongside an error")
+	}
+	if !strings.Contains(err.Error(), "db: failed to resolve credentials") {
+		t.Errorf("error = %q, want the credential failure surfaced", err.Error())
+	}
+	if src.Invalidated() != 0 {
+		t.Errorf("Invalidate called %d times, want 0 for a source-level error", src.Invalidated())
+	}
+}
+
+func TestNewWithCredentials_PingFailure_InvalidatesAndRedacts(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	const password = `p#ss@w:rd/x?y%z&a=b`
+	connStr := fmt.Sprintf("postgres://%s/testdb?sslmode=disable&connect_timeout=2", testutil.ClosedPortAddr(t))
+	src := &testutil.FakeCredentialSource{Username: "test_user", Password: password}
+
+	pool, err := NewWithCredentials(ctx, connStr, src)
+	if err == nil {
+		if pool != nil {
+			pool.Close()
+		}
+		t.Fatal("NewWithCredentials() error = nil, want a ping failure against a closed port")
+	}
+	if !strings.Contains(err.Error(), "db: failed to ping database") {
+		t.Errorf("error = %q, want the ping failure surfaced", err.Error())
+	}
+	if strings.Contains(err.Error(), password) {
+		t.Errorf("error = %q, leaked the credential", err.Error())
+	}
+	if src.Invalidated() != 1 {
+		t.Errorf("Invalidate called %d times, want 1 after a ping failure", src.Invalidated())
 	}
 }
