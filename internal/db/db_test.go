@@ -14,25 +14,6 @@ import (
 	"github.com/profitify/profitify-backend/internal/testutil"
 )
 
-// fakeCredSource is a test CredentialSource. If err is set, Credentials
-// returns it instead of the configured username/password.
-type fakeCredSource struct {
-	username, password string
-	err                error
-	invalidateCalls    int
-}
-
-func (f *fakeCredSource) Credentials(context.Context) (string, string, error) {
-	if f.err != nil {
-		return "", "", f.err
-	}
-	return f.username, f.password, nil
-}
-
-func (f *fakeCredSource) Invalidate() {
-	f.invalidateCalls++
-}
-
 func TestParseConfig_SimpleProtocol(t *testing.T) {
 	cfg, err := ParseConfig("postgres://user:pass@localhost:5432/testdb")
 	if err != nil {
@@ -207,7 +188,7 @@ func TestApplyCredentials_SetsUserAndPassword(t *testing.T) {
 		t.Fatalf("ParseConfig() error = %v", err)
 	}
 
-	src := &fakeCredSource{username: "profitify_admin", password: reservedPassword}
+	src := &testutil.FakeCredentialSource{Username: "profitify_admin", Password: reservedPassword}
 	if err := applyCredentials(context.Background(), cfg, src); err != nil {
 		t.Fatalf("applyCredentials() error = %v", err)
 	}
@@ -228,7 +209,7 @@ func TestApplyCredentials_SourceError_LeavesConfigUntouched(t *testing.T) {
 	cfg.ConnConfig.User = "original-user"
 	cfg.ConnConfig.Password = "original-password"
 
-	src := &fakeCredSource{err: errors.New("secrets: get secret value for arn: boom")}
+	src := &testutil.FakeCredentialSource{Err: errors.New("secrets: get secret value for arn: boom")}
 	err = applyCredentials(context.Background(), cfg, src)
 	if err == nil {
 		t.Fatal("applyCredentials() error = nil, want error")
@@ -248,7 +229,7 @@ func TestNewWithCredentials_SourceError_DoesNotConnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
-	src := &fakeCredSource{err: errors.New("secrets: get secret value for arn: boom")}
+	src := &testutil.FakeCredentialSource{Err: errors.New("secrets: get secret value for arn: boom")}
 	pool, err := NewWithCredentials(ctx, "postgres://db-host.internal:5432/profitify?sslmode=disable", src)
 	if err == nil {
 		if pool != nil {
@@ -262,8 +243,8 @@ func TestNewWithCredentials_SourceError_DoesNotConnect(t *testing.T) {
 	if !strings.Contains(err.Error(), "db: failed to resolve credentials") {
 		t.Errorf("error = %q, want the credential failure surfaced", err.Error())
 	}
-	if src.invalidateCalls != 0 {
-		t.Errorf("Invalidate called %d times, want 0 for a source-level error", src.invalidateCalls)
+	if src.Invalidated() != 0 {
+		t.Errorf("Invalidate called %d times, want 0 for a source-level error", src.Invalidated())
 	}
 }
 
@@ -273,7 +254,7 @@ func TestNewWithCredentials_PingFailure_InvalidatesAndRedacts(t *testing.T) {
 
 	const password = `p#ss@w:rd/x?y%z&a=b`
 	connStr := fmt.Sprintf("postgres://%s/testdb?sslmode=disable&connect_timeout=2", testutil.ClosedPortAddr(t))
-	src := &fakeCredSource{username: "profitify_admin", password: password}
+	src := &testutil.FakeCredentialSource{Username: "profitify_admin", Password: password}
 
 	pool, err := NewWithCredentials(ctx, connStr, src)
 	if err == nil {
@@ -288,7 +269,7 @@ func TestNewWithCredentials_PingFailure_InvalidatesAndRedacts(t *testing.T) {
 	if strings.Contains(err.Error(), password) {
 		t.Errorf("error = %q, leaked the credential", err.Error())
 	}
-	if src.invalidateCalls != 1 {
-		t.Errorf("Invalidate called %d times, want 1 after a ping failure", src.invalidateCalls)
+	if src.Invalidated() != 1 {
+		t.Errorf("Invalidate called %d times, want 1 after a ping failure", src.Invalidated())
 	}
 }

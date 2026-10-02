@@ -9,19 +9,8 @@ import (
 	"time"
 
 	"github.com/profitify/profitify-backend/internal/db"
+	"github.com/profitify/profitify-backend/internal/testutil"
 )
-
-// fakeCredSource is a minimal db.CredentialSource for tests: it always
-// returns the same username/password and Invalidate is a no-op.
-type fakeCredSource struct {
-	username, password string
-}
-
-func (f *fakeCredSource) Credentials(context.Context) (string, string, error) {
-	return f.username, f.password, nil
-}
-
-func (f *fakeCredSource) Invalidate() {}
 
 // credentialFreeURL strips any userinfo from dsn, so it points at the same
 // host, port and database with no embedded credentials.
@@ -72,7 +61,7 @@ func TestNewWithCredentials_RoundTripsReservedCharacters(t *testing.T) {
 	})
 
 	connStr := credentialFreeURL(t, dsn)
-	src := &fakeCredSource{username: roleName, password: password}
+	src := &testutil.FakeCredentialSource{Username: roleName, Password: password}
 
 	pool, err := db.NewWithCredentials(ctx, connStr, src)
 	if err != nil {

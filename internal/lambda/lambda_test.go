@@ -61,21 +61,6 @@ func TestInitLogger_ReturnsIndependentInstances(t *testing.T) {
 	}
 }
 
-// fakeCredSource is a test db.CredentialSource.
-type fakeCredSource struct {
-	username, password string
-	err                error
-}
-
-func (f *fakeCredSource) Credentials(context.Context) (string, string, error) {
-	if f.err != nil {
-		return "", "", f.err
-	}
-	return f.username, f.password, nil
-}
-
-func (f *fakeCredSource) Invalidate() {}
-
 // fakeValueSource is a test valueSource.
 type fakeValueSource struct {
 	value string
@@ -94,7 +79,7 @@ func TestConnectDB_NoSecretARN_UsesDatabaseURLAsIs(t *testing.T) {
 	orig := credentialSourceFor
 	credentialSourceFor = func(context.Context, string) (db.CredentialSource, error) {
 		called = true
-		return &fakeCredSource{}, nil
+		return &testutil.FakeCredentialSource{}, nil
 	}
 	t.Cleanup(func() { credentialSourceFor = orig })
 
@@ -121,7 +106,7 @@ func TestConnectDB_WithSecretARN_UsesCredentialSource(t *testing.T) {
 	orig := credentialSourceFor
 	credentialSourceFor = func(_ context.Context, arn string) (db.CredentialSource, error) {
 		gotARN = arn
-		return &fakeCredSource{username: "u", password: "p"}, nil
+		return &testutil.FakeCredentialSource{Username: "u", Password: "p"}, nil
 	}
 	t.Cleanup(func() { credentialSourceFor = orig })
 
