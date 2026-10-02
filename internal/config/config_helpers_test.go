@@ -2,18 +2,6 @@ package config
 
 import "testing"
 
-// clearEnv unsets every variable the config loaders read, so each test starts clean.
-func clearEnv(t *testing.T) {
-	t.Helper()
-	for _, k := range []string{
-		"DATABASE_URL", "API_PORT", "APP_ENV", "DB_POOL_MAX_CONNS",
-		"MASSIVE_API_KEY", "SQS_QUEUE_URL", "TICKER_LIMIT", "TICKER_ALLOWLIST", "SFN_ARN",
-		"DB_SECRET_ARN", "MASSIVE_API_KEY_SECRET_ARN",
-	} {
-		t.Setenv(k, "")
-	}
-}
-
 // loaderResult is the common projection of every Lambda config loader's
 // fields relevant to the cross-cutting tests in this package: the Massive
 // API key requirement (config_massive_key_test.go) and DBSecretARN

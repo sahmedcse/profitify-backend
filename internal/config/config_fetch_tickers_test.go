@@ -1,10 +1,14 @@
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/profitify/profitify-backend/internal/testutil"
+)
 
 func TestLoadFetchTickers(t *testing.T) {
 	t.Run("success with defaults", func(t *testing.T) {
-		clearEnv(t)
+		testutil.ClearEnv(t)
 		t.Setenv("MASSIVE_API_KEY", "key")
 		t.Setenv("SQS_QUEUE_URL", "https://sqs/q")
 		t.Setenv("DATABASE_URL", "postgres://localhost/db")
@@ -28,7 +32,7 @@ func TestLoadFetchTickers(t *testing.T) {
 	})
 
 	t.Run("allowlist and limit parsed", func(t *testing.T) {
-		clearEnv(t)
+		testutil.ClearEnv(t)
 		t.Setenv("MASSIVE_API_KEY", "key")
 		t.Setenv("SQS_QUEUE_URL", "https://sqs/q")
 		t.Setenv("DATABASE_URL", "postgres://localhost/db")
@@ -65,7 +69,7 @@ func TestLoadFetchTickers(t *testing.T) {
 		}
 		for _, c := range cases {
 			t.Run(c.name, func(t *testing.T) {
-				clearEnv(t)
+				testutil.ClearEnv(t)
 				for k, v := range c.env {
 					t.Setenv(k, v)
 				}
@@ -78,7 +82,7 @@ func TestLoadFetchTickers(t *testing.T) {
 }
 
 func TestLoadFetchTickers_RequiresDatabaseURL(t *testing.T) {
-	clearEnv(t)
+	testutil.ClearEnv(t)
 	t.Setenv("MASSIVE_API_KEY", "key")
 	t.Setenv("SQS_QUEUE_URL", "https://sqs/q")
 
@@ -88,7 +92,7 @@ func TestLoadFetchTickers_RequiresDatabaseURL(t *testing.T) {
 }
 
 func TestLoadFetchTickers_PoolMaxConnsDefault(t *testing.T) {
-	clearEnv(t)
+	testutil.ClearEnv(t)
 	t.Setenv("MASSIVE_API_KEY", "key")
 	t.Setenv("SQS_QUEUE_URL", "https://sqs/q")
 	t.Setenv("DATABASE_URL", "postgres://localhost/db")

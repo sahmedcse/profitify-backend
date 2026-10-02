@@ -3,6 +3,8 @@ package config
 import (
 	"strings"
 	"testing"
+
+	"github.com/profitify/profitify-backend/internal/testutil"
 )
 
 // dbAndKeyLoaders returns the four loaders (see loaders() in
@@ -16,7 +18,7 @@ func dbAndKeyLoaders() []loader {
 func TestDBAndKeyLoaders_Success(t *testing.T) {
 	for _, l := range dbAndKeyLoaders() {
 		t.Run(l.name, func(t *testing.T) {
-			clearEnv(t)
+			testutil.ClearEnv(t)
 			t.Setenv("DATABASE_URL", "postgres://localhost/db")
 			t.Setenv("MASSIVE_API_KEY", "key")
 
@@ -40,7 +42,7 @@ func TestDBAndKeyLoaders_Success(t *testing.T) {
 func TestDBAndKeyLoaders_PoolOverride(t *testing.T) {
 	for _, l := range dbAndKeyLoaders() {
 		t.Run(l.name, func(t *testing.T) {
-			clearEnv(t)
+			testutil.ClearEnv(t)
 			t.Setenv("DATABASE_URL", "postgres://localhost/db")
 			t.Setenv("MASSIVE_API_KEY", "key")
 			t.Setenv("DB_POOL_MAX_CONNS", "9")
@@ -69,7 +71,7 @@ func TestDBAndKeyLoaders_MissingVars(t *testing.T) {
 	for _, l := range dbAndKeyLoaders() {
 		for _, c := range cases {
 			t.Run(l.name+"/"+c.name, func(t *testing.T) {
-				clearEnv(t)
+				testutil.ClearEnv(t)
 				for k, v := range c.env {
 					t.Setenv(k, v)
 				}
@@ -92,7 +94,7 @@ func TestKeyLoaders_MassiveAPIKeyOrSecretARN(t *testing.T) {
 	for _, l := range keyLoaders {
 		t.Run(l.name, func(t *testing.T) {
 			t.Run("secret ARN alone succeeds", func(t *testing.T) {
-				clearEnv(t)
+				testutil.ClearEnv(t)
 				t.Setenv("DATABASE_URL", "postgres://localhost/db")
 				l.setExtraEnv(t)
 				t.Setenv("MASSIVE_API_KEY_SECRET_ARN", secretARN)
@@ -110,7 +112,7 @@ func TestKeyLoaders_MassiveAPIKeyOrSecretARN(t *testing.T) {
 			})
 
 			t.Run("env key alone succeeds", func(t *testing.T) {
-				clearEnv(t)
+				testutil.ClearEnv(t)
 				t.Setenv("DATABASE_URL", "postgres://localhost/db")
 				l.setExtraEnv(t)
 				t.Setenv("MASSIVE_API_KEY", "key")
@@ -128,7 +130,7 @@ func TestKeyLoaders_MassiveAPIKeyOrSecretARN(t *testing.T) {
 			})
 
 			t.Run("neither gives the or error", func(t *testing.T) {
-				clearEnv(t)
+				testutil.ClearEnv(t)
 				t.Setenv("DATABASE_URL", "postgres://localhost/db")
 				l.setExtraEnv(t)
 
@@ -145,7 +147,7 @@ func TestKeyLoaders_MassiveAPIKeyOrSecretARN(t *testing.T) {
 }
 
 func TestLoadEnrichTicker_DoesNotRequireMassiveAPIKey(t *testing.T) {
-	clearEnv(t)
+	testutil.ClearEnv(t)
 	t.Setenv("DATABASE_URL", "postgres://localhost/db")
 	// Deliberately left unset: enrich-ticker never builds a Massive client,
 	// so neither MASSIVE_API_KEY nor its secret ARN variant is required.
@@ -163,7 +165,7 @@ func TestLoadEnrichTicker_DoesNotRequireMassiveAPIKey(t *testing.T) {
 }
 
 func TestLoadEnrichTicker_MissingDatabaseURL(t *testing.T) {
-	clearEnv(t)
+	testutil.ClearEnv(t)
 	if _, err := LoadEnrichTicker(); err == nil {
 		t.Fatal("LoadEnrichTicker() error = nil, want error for missing DATABASE_URL")
 	}

@@ -1,10 +1,14 @@
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/profitify/profitify-backend/internal/testutil"
+)
 
 func TestLoadStartPipeline(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		clearEnv(t)
+		testutil.ClearEnv(t)
 		t.Setenv("DATABASE_URL", "postgres://localhost/db")
 		t.Setenv("SFN_ARN", "arn:aws:states:::sm")
 
@@ -31,7 +35,7 @@ func TestLoadStartPipeline(t *testing.T) {
 		}
 		for _, c := range cases {
 			t.Run(c.name, func(t *testing.T) {
-				clearEnv(t)
+				testutil.ClearEnv(t)
 				for k, v := range c.env {
 					t.Setenv(k, v)
 				}

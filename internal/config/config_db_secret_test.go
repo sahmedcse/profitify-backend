@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/profitify/profitify-backend/internal/testutil"
+)
 
 // TestDBSecretARN_PopulatedOrEmpty covers all eight Lambda config loaders
 // (see loaders() in config_helpers_test.go), each of which gained an
@@ -11,7 +15,7 @@ func TestDBSecretARN_PopulatedOrEmpty(t *testing.T) {
 	for _, l := range loaders() {
 		t.Run(l.name, func(t *testing.T) {
 			t.Run("set", func(t *testing.T) {
-				clearEnv(t)
+				testutil.ClearEnv(t)
 				l.setBaseEnv(t)
 				t.Setenv("DB_SECRET_ARN", arn)
 
@@ -25,7 +29,7 @@ func TestDBSecretARN_PopulatedOrEmpty(t *testing.T) {
 			})
 
 			t.Run("unset", func(t *testing.T) {
-				clearEnv(t)
+				testutil.ClearEnv(t)
 				l.setBaseEnv(t)
 
 				res, err := l.load()

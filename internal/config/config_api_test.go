@@ -1,10 +1,14 @@
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/profitify/profitify-backend/internal/testutil"
+)
 
 func TestLoad(t *testing.T) {
 	t.Run("defaults applied", func(t *testing.T) {
-		clearEnv(t)
+		testutil.ClearEnv(t)
 		t.Setenv("DATABASE_URL", "postgres://localhost/db")
 
 		cfg, err := Load()
@@ -26,7 +30,7 @@ func TestLoad(t *testing.T) {
 	})
 
 	t.Run("overrides applied", func(t *testing.T) {
-		clearEnv(t)
+		testutil.ClearEnv(t)
 		t.Setenv("DATABASE_URL", "postgres://localhost/db")
 		t.Setenv("API_PORT", "9999")
 		t.Setenv("APP_ENV", "production")
@@ -42,7 +46,7 @@ func TestLoad(t *testing.T) {
 	})
 
 	t.Run("missing DATABASE_URL", func(t *testing.T) {
-		clearEnv(t)
+		testutil.ClearEnv(t)
 		if _, err := Load(); err == nil {
 			t.Fatal("Load() error = nil, want error for missing DATABASE_URL")
 		}
