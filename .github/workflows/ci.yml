@@ -142,7 +142,7 @@ jobs:
       # is not possible there. Never fail the job over it.
       - name: Comment on the PR
         continue-on-error: true
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
