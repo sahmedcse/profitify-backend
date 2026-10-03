@@ -11,7 +11,7 @@ require (
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/massive-com/client-go/v2 v2.0.0
-	github.com/massive-com/client-go/v3 v3.3.0
+	github.com/massive-com/client-go/v3 v3.4.0
 	github.com/pressly/goose/v3 v3.27.2
 )
 
